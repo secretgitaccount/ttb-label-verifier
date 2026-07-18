@@ -65,7 +65,7 @@ type ManifestKey = keyof ApplicationSubmission | "fileName";
  * check and the per-row blank check, so adding an optional key to it would
  * reject every domestic manifest ever exported — including samples/manifest.csv.
  */
-const OPTIONAL_KEYS = ["bottlerAddress", "countryOfOrigin"] as const satisfies
+const OPTIONAL_KEYS = ["bottlerAddress", "countryOfOrigin", "labelWidthMm"] as const satisfies
   readonly (keyof OptionalApplicationFields)[];
 
 /** Column headings we accept, normalized to lowercase alphanumerics. */
@@ -94,6 +94,9 @@ const COLUMN_ALIASES: Record<string, ManifestKey> = {
   countryoforigin: "countryOfOrigin",
   country: "countryOfOrigin",
   origin: "countryOfOrigin",
+  labelwidthmm: "labelWidthMm",
+  labelwidth: "labelWidthMm",
+  widthmm: "labelWidthMm",
 };
 
 const ALL_KEYS: ManifestKey[] = [

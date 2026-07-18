@@ -17,25 +17,32 @@ Reviewer shortcuts: [Requirements coverage](#requirements-coverage) ·
 ## Requirements coverage
 
 **Every requirement achievable in this environment is implemented and verified —
-35 of the 38 tracked in [`docs/PRD.md`](docs/PRD.md).** That includes everything
+36 of the 38 tracked in [`docs/PRD.md`](docs/PRD.md).** That includes everything
 stated in the brief's technical requirements and everything raised in the
 stakeholder interviews, down to details mentioned once in passing: the exact
 statutory warning text, the all-caps *and bold* heading, `STONE'S THROW` versus
 `Stone's Throw`, batch upload, and photographs taken at an angle.
 
-The three exceptions are listed below with what each actually depends on. None
-is an oversight; each was investigated, and two produced measurements that are
-in this repository.
+The two exceptions are listed below with what each actually depends on. Neither
+is an oversight; both were investigated, and the measurements are in this
+repository.
 
 | Requirement | Status | What it depends on |
 |---|---|---|
 | **NFR-1** — round trip under 5s | Measured, not certified | **The deployment environment.** Latest n=10: 4.22s median, 4.67s p90, all ten under 5s. But three samples on near-identical builds gave p90 of 4.67s, 4.95s and 5.02s, with tails to 6.98s — repeat variance exceeds the effect of any change we made. The tail is connection setup and provider queueing, not our code: reducing image size to 700px still produced runs over 5s. Certifying this needs measurement on TTB's own network, which we cannot reach. |
 | **NFR-7** — runs behind a restrictive firewall | Designed for, unproven | **Access we do not have.** Marcus Williams noted TTB blocks outbound ML endpoints. The provider seam is real and tested (`lib/providers/`), so the model is swappable without touching the compliance engine. An Azure Document Intelligence adapter is written, but validating it requires an Azure account and TTB's network. It also carries a genuine cost we did not hide: OCR does not report font weight, so adopting it loses bold detection. See [`docs/MIGRATION.md`](docs/MIGRATION.md). |
-| **FR-10** — warning meets minimum type size | Attempted twice, rejected on evidence | **The technique, not the environment.** This one is honestly within reach — just not this way. Two model-based approaches were built and measured against pixel-decoded ground truth: absolute millimetre measurement (±30–40% error against a 20% decision band) and a scale-free ratio between two texts on the same label (−27%, worse than either input, because the model's vertical bias is anti-correlated rather than common). Both are written up in [`docs/TYPE-SIZE-FEASIBILITY.md`](docs/TYPE-SIZE-FEASIBILITY.md). A classical computer-vision measurement validated against ground truth would work; it was out of scope for a time-boxed prototype, and shipping a measurement we could not trust would be worse than not shipping one. |
 
-Two of the three are gated on the deployment environment. The third is a
-deliberate scope decision with the alternative named. All three are recorded in
-the PRD rather than left for a reviewer to discover.
+Both are gated on the deployment environment, and both are recorded in the PRD
+rather than left for a reviewer to discover.
+
+Worth noting what is *not* on that list. Type size (FR-10) took three attempts.
+Two model-based approaches were built, measured against pixel-decoded ground
+truth, and rejected — ±30–40% error, then −27% when a ratio made it worse
+instead of better. Both failures are written up in
+[`docs/TYPE-SIZE-FEASIBILITY.md`](docs/TYPE-SIZE-FEASIBILITY.md), and their
+reasoning is what identified the approach that worked: classical computer vision
+(`lib/typesize.ts`), which measures to 0px boundary error in ~7ms and refuses
+rotated, curved or stretched images rather than guessing at them.
 
 ---
 
@@ -51,19 +58,20 @@ You need an Anthropic API key from
 [console.anthropic.com](https://console.anthropic.com/settings/keys).
 
 ```bash
-npm test          # 37 tests, no API key needed
+npm test          # 90 tests, no API key needed
 npm run typecheck
 npm run build
 ```
 
-`npm test` runs both suites: `test/compare.test.ts` (26 tests over the decision
-logic) and `test/extract.test.ts` (11 tests over the model-response validator).
-Neither makes a network call.
+`npm test` runs four suites and makes no network calls:
+`compare.test.ts` (39, the decision logic), `typesize.test.ts` (23, type-size
+measurement against pixel-decoded ground truth), `extract.test.ts` (14, the
+model-response validator) and `providers.test.ts` (14, the extraction seam).
 
 ### Verifying it end to end
 
-Five synthetic labels ship in `samples/` — one compliant, four with specific
-defects. With the server running:
+Eight synthetic labels ship in `samples/` — two fully compliant, six carrying
+one specific defect each. With the server running:
 
 ```bash
 node scripts/smoke-test.mjs samples/old-tom.png
@@ -90,6 +98,14 @@ laptop, using the standard application data in `samples/manifest.csv`.
 | `wrong-abv` | rejected — label 40%, application 45% | FAIL on alcohol |
 | `unbolded-warning` | rejected — heading correct and ALL CAPS, but set at the same weight as the body text | FAIL on warning |
 | `stones-throw-tilted` | pass — `STONE'S THROW` vs `Stone's Throw`, `0.75 L` vs `750 mL`, rotated 7° | PASS |
+| `imported-scotch` | pass — carries a bottler address and country of origin | PASS |
+| `compliant-warning` | pass — warning type size 2.74mm against a 2mm minimum | PASS |
+| `tiny-warning` | rejected — warning type size 0.97mm, half the minimum | FAIL on type size |
+
+The last three need extra application data: `imported-scotch` takes a bottler
+address and country of origin, and the two type-size fixtures take a label width
+of 100mm (without a stated width, type size reports "not assessed"). All are set
+up in `samples/manifest.csv` for batch mode.
 
 `stones-throw-tilted` is the interesting pass: it exercises Dave's
 capitalization point, unit normalization, and an off-angle photograph in a
@@ -502,17 +518,16 @@ estimates. They were not benchmarked and contain no verified pricing.
 - **Batch is client-orchestrated.** 300 labels means 300 requests from the
   browser. Fine for a prototype; a production version would want a queue with
   a resumable job, since closing the tab currently loses in-flight progress.
-- **Type size and placement are not checked, and two attempts to add it were
-  rejected on evidence.** Heading weight is checked; *size* is not, nor is
-  placement. A warning that is correct, capitalised, bold, and half the required
-  height passes. Absolute millimetre measurement carried ±30–40% error against a
-  20% decision band; a scale-free ratio between two texts on the same label was
-  worse still (−27%), because the model's vertical bias turned out to be
-  anti-correlated between measurements rather than common to them. The bias also
-  moves with glyph size and prompt wording, so it cannot be calibrated out. Both
-  studies, with pixel-decoded ground truth, are in
-  [`docs/TYPE-SIZE-FEASIBILITY.md`](docs/TYPE-SIZE-FEASIBILITY.md). A classical
-  CV measurement validated against ground truth is the only credible path.
+- **Type size is measured only on flat, square-on artwork.** Rotation,
+  perspective and curvature are detected and refused rather than measured, so a
+  photograph of a curved bottle reports "not assessed". That is deliberate —
+  cylindrical distortion cannot be corrected and would corrupt the reading
+  invisibly — but it means the practical coverage on real submissions is
+  unmeasured, since every fixture here is a clean synthetic render. Anisotropic
+  stretching is only caught when a label *height* is supplied alongside the
+  width; with width alone it passes undetected, biased toward false approval.
+  Placement is not checked at all. See
+  [`docs/TYPE-SIZE-FEASIBILITY.md`](docs/TYPE-SIZE-FEASIBILITY.md).
 - **Similarity threshold (0.82) and the 0.15% ABV tolerance are unvalidated
   against real data.** Both are defensible readings of the regulation rather
   than tuned constants; they should be checked against real mismatch data.

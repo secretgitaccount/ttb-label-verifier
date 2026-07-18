@@ -22,6 +22,7 @@ const EMPTY: FormState = {
   netContents: "",
   bottlerAddress: "",
   countryOfOrigin: "",
+  labelWidthMm: "",
 };
 
 const FIELDS: {
@@ -44,11 +45,18 @@ const FIELDS: {
 ];
 
 /**
- * TTB requires these only in some circumstances — a country of origin is an
- * import-only statement, and many domestic applications state no bottler
- * address here at all. They are kept out of FIELDS so they cannot reach the
- * `ready` check below: a domestic spirits application must submit with both
- * boxes empty.
+ * Inputs that are only sometimes available — a country of origin is an
+ * import-only statement, many domestic applications state no bottler address
+ * here at all, and a physical label width is something the applicant may simply
+ * not have to hand. They are kept out of FIELDS so they cannot reach the
+ * `ready` check below: a domestic spirits application must submit with every
+ * one of these boxes empty.
+ *
+ * Label width is the odd one out — it is not a claim about the label that gets
+ * compared, it is the scale reference the type-size measurement needs, since a
+ * regulation written in millimetres cannot be checked against an image that has
+ * no inherent size. Leaving it blank means that one check reports "not
+ * assessed"; it never blocks the other five.
  */
 const OPTIONAL_FIELDS: {
   key: keyof Required<OptionalApplicationFields>;
@@ -67,6 +75,12 @@ const OPTIONAL_FIELDS: {
     label: "Country of origin",
     placeholder: "Product of Scotland",
     hint: "Imported products only. Leave blank for domestic products.",
+  },
+  {
+    key: "labelWidthMm",
+    label: "Label width (mm)",
+    placeholder: "100",
+    hint: "Full width of the printed label, border included. Without it the type size cannot be checked, and nothing is assumed.",
   },
 ];
 

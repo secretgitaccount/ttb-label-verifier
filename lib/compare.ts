@@ -11,9 +11,11 @@ import type {
   ApplicationSubmission,
   ExtractedLabel,
   FieldResult,
+  TypeSizeAssessment,
   VerificationResult,
   Verdict,
 } from "./types.ts";
+import type { TypeSizeResult } from "./typesize.ts";
 import { checkWarningText, collapseWhitespace, GOVERNMENT_WARNING } from "./warning.ts";
 
 /** Strip case, punctuation and spacing noise: "STONE'S THROW" ~ "Stone's Throw". */
@@ -347,10 +349,120 @@ function compareWarning(label: ExtractedLabel): FieldResult {
   };
 }
 
+/**
+ * Minimum Government Warning type size, 27 CFR 16.22, keyed on container size.
+ * Listed smallest-first and matched on the first bound the volume falls at or
+ * under, so the boundaries read the way the regulation states them.
+ */
+const TYPE_SIZE_RULES: { maxMl: number; mm: number; label: string }[] = [
+  { maxMl: 237, mm: 1, label: "containers of 237 mL or less" },
+  { maxMl: 3000, mm: 2, label: "containers over 237 mL up to 3 L" },
+  { maxMl: Infinity, mm: 3, label: "containers over 3 L" },
+];
+
+export function requiredTypeSizeMm(netContentsMl: number): { mm: number; label: string } {
+  const rule = TYPE_SIZE_RULES.find((r) => netContentsMl <= r.maxMl)!;
+  return { mm: rule.mm, label: rule.label };
+}
+
+/**
+ * How far from the threshold a measurement must sit before it decides anything.
+ *
+ * lib/typesize.ts budgets roughly +-9% at a threshold-sized glyph (one pixel of
+ * cap-height quantisation on a ~12px cap, plus ~1% on the label boundary). The
+ * band is set at 20% — a little over twice that — so a verdict is only issued
+ * where the whole uncertainty interval sits clearly on one side.
+ *
+ * The asymmetry in consequences drives the width. Everything inside the band
+ * becomes REVIEW, which costs an agent a glance at a label they were going to
+ * look at anyway. A band too narrow converts measurement noise into wrong
+ * FAILs, which cost an applicant a resubmission over a label that complies.
+ * The previous two attempts at this requirement had error budgets of 27-40%,
+ * wider than this entire band, which is exactly why they could not be shipped.
+ */
+const TYPE_SIZE_FAIL_RATIO = 0.8;
+const TYPE_SIZE_PASS_RATIO = 1.2;
+
+/** One decimal place: the measurement does not support more, and 2.7419 would imply it does. */
+const mm = (value: number) => value.toFixed(1);
+
+/**
+ * Turn a physical measurement into a compliance judgement.
+ *
+ * Note the division of labour, which is the same one the rest of this file
+ * follows: lib/typesize.ts measures and refuses, and knows nothing about 16.22;
+ * every threshold and band lives here in plain TypeScript, where it can be read
+ * and argued with. The model is not involved at either end.
+ */
+function assessTypeSize(
+  measurement: TypeSizeResult,
+  netContents: string,
+): TypeSizeAssessment {
+  if (!measurement.measured) {
+    return { assessed: false, reason: measurement.detail };
+  }
+
+  const volumeMl = parseVolumeMl(netContents);
+  if (volumeMl === null) {
+    // The threshold is a function of container size. Without a volume we cannot
+    // say which of the three applies, and picking one would be a guess.
+    return {
+      assessed: false,
+      reason:
+        "The minimum type size depends on the container size, which could not be read from the net contents statement.",
+    };
+  }
+
+  const required = requiredTypeSizeMm(volumeMl);
+  const { capHeightMm, uncertaintyMm, capHeightPx, labelWidthPx } = measurement;
+  const ratio = capHeightMm / required.mm;
+
+  const measurementText = `The warning measures ${mm(capHeightMm)} mm (+/- ${mm(
+    uncertaintyMm,
+  )} mm) against a ${required.mm} mm minimum for ${required.label}.`;
+
+  if (ratio < TYPE_SIZE_FAIL_RATIO) {
+    return {
+      assessed: true,
+      verdict: "FAIL",
+      reason: `${measurementText} That is below the minimum by more than the measurement can account for.`,
+      measuredMm: capHeightMm,
+      uncertaintyMm,
+      requiredMm: required.mm,
+      capHeightPx,
+      labelWidthPx,
+    };
+  }
+
+  if (ratio <= TYPE_SIZE_PASS_RATIO) {
+    return {
+      assessed: true,
+      verdict: "REVIEW",
+      reason: `${measurementText} That is too close to the minimum to call from this image — check the type size against the printed artwork.`,
+      measuredMm: capHeightMm,
+      uncertaintyMm,
+      requiredMm: required.mm,
+      capHeightPx,
+      labelWidthPx,
+    };
+  }
+
+  return {
+    assessed: true,
+    verdict: "PASS",
+    reason: `${measurementText} That clears the minimum.`,
+    measuredMm: capHeightMm,
+    uncertaintyMm,
+    requiredMm: required.mm,
+    capHeightPx,
+    labelWidthPx,
+  };
+}
+
 /** Worst verdict wins: any FAIL fails the application. */
-function rollUp(fields: FieldResult[]): Verdict {
-  if (fields.some((f) => f.verdict === "FAIL")) return "FAIL";
-  if (fields.some((f) => f.verdict === "REVIEW")) return "REVIEW";
+function rollUpVerdicts(verdicts: Verdict[]): Verdict {
+  if (verdicts.includes("FAIL")) return "FAIL";
+  if (verdicts.includes("REVIEW")) return "REVIEW";
   return "PASS";
 }
 
@@ -358,6 +470,12 @@ export function verify(
   application: ApplicationSubmission,
   label: ExtractedLabel,
   elapsedMs: number,
+  /**
+   * Result of the server-side pixel measurement, when one was attempted.
+   * Omitted entirely by callers that have no image to measure, which is why
+   * every existing call site keeps working unchanged.
+   */
+  typeSizeMeasurement?: TypeSizeResult,
 ): VerificationResult {
   const fields: FieldResult[] = [
     compareText("brandName", "Brand Name", application.brandName, label.brandName),
@@ -390,17 +508,32 @@ export function verify(
     );
   }
 
-  let verdict = rollUp(fields);
+  const typeSize = typeSizeMeasurement
+    ? assessTypeSize(typeSizeMeasurement, application.netContents)
+    : undefined;
+
+  // A measured type size is a real defect and rolls up like any other. A
+  // refusal contributes nothing at all — not a PASS, not a REVIEW. "We could
+  // not establish a scale" is not evidence about the label, and letting it
+  // nudge the overall verdict in either direction would be inventing a finding.
+  const verdicts = fields.map((f) => f.verdict);
+  if (typeSize?.assessed) verdicts.push(typeSize.verdict);
+
+  let verdict = rollUpVerdicts(verdicts);
 
   // An unreadable photo shouldn't read as a compliance failure — it's a
   // request for a better image. Only soften a FAIL that came from absent
   // fields, never one from a warning-text defect we could actually read.
   if (!label.imageQuality.readable && verdict === "FAIL") {
-    const onlyMissingFields = fields.every(
-      (f) => f.verdict !== "FAIL" || f.found === null,
-    );
+    // A measured undersized warning is not an artefact of a bad photograph:
+    // the geometry was resolved well enough to measure, and typesize.ts would
+    // have refused outright if it had not been. So it blocks the softening the
+    // same way a readable warning-text defect does.
+    const onlyMissingFields =
+      fields.every((f) => f.verdict !== "FAIL" || f.found === null) &&
+      !(typeSize?.assessed && typeSize.verdict === "FAIL");
     if (onlyMissingFields) verdict = "REVIEW";
   }
 
-  return { verdict, fields, imageQuality: label.imageQuality, elapsedMs };
+  return { verdict, fields, imageQuality: label.imageQuality, elapsedMs, typeSize };
 }

@@ -490,6 +490,28 @@ test("CSV manifests accept the optional columns when supplied", () => {
   assert.equal(records[0].countryOfOrigin, "Product of Scotland");
 });
 
+test("CSV manifests accept an optional label width column", () => {
+  const { records, errors } = parseManifest(
+    "file_name,brand_name,class_type,alcohol_content,net_contents,label_width_mm\n" +
+      "a.png,ACME,Bourbon,45% Alc./Vol.,750 mL,100",
+  );
+  assert.deepEqual(errors, []);
+  assert.equal(records[0].labelWidthMm, "100");
+});
+
+test("a manifest with no label width column still parses", () => {
+  // Every manifest an importer already holds predates this column. Adding it to
+  // the required set would reject all of them, so it has to stay optional in
+  // exactly the way bottler_address and country_of_origin are — absent means
+  // the type-size check reports "not assessed", never that the row is invalid.
+  const { records, errors } = parseManifest(
+    "file_name,brand_name,class_type,alcohol_content,net_contents\n" +
+      "a.png,ACME,Bourbon,45% Alc./Vol.,750 mL",
+  );
+  assert.deepEqual(errors, []);
+  assert.equal(records[0].labelWidthMm, undefined);
+});
+
 test("a blank optional cell is left unset rather than asserted as empty", () => {
   const { records, errors } = parseManifest(
     "file_name,brand_name,class_type,alcohol_content,net_contents,country_of_origin\n" +

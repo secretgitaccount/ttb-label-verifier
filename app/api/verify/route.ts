@@ -2,6 +2,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import { NextResponse } from "next/server";
 import { extractLabel, isSupportedMediaType, SUPPORTED_MEDIA_TYPES } from "@/lib/extract";
 import { verify } from "@/lib/compare";
+import { measureWarningTypeSize, type TypeSizeResult } from "@/lib/typesize";
 import type { ApplicationRecord, ApplicationSubmission } from "@/lib/types";
 
 export const runtime = "nodejs";
@@ -119,14 +120,54 @@ export async function POST(request: Request) {
   const submission: ApplicationSubmission = { ...application };
   const bottlerAddress = String(form.get("bottlerAddress") ?? "").trim();
   const countryOfOrigin = String(form.get("countryOfOrigin") ?? "").trim();
+  const labelWidthMm = String(form.get("labelWidthMm") ?? "").trim();
   if (bottlerAddress) submission.bottlerAddress = bottlerAddress;
   if (countryOfOrigin) submission.countryOfOrigin = countryOfOrigin;
+  if (labelWidthMm) submission.labelWidthMm = labelWidthMm;
+
+  // A width we cannot parse is rejected here rather than quietly ignored. The
+  // type-size check is the one place in this app where a wrong number produces
+  // a confident wrong verdict instead of a visible mismatch, so "45mm-ish" must
+  // not silently become "no width supplied" and read as "not assessed".
+  const parsedWidthMm = labelWidthMm ? Number(labelWidthMm) : undefined;
+  if (
+    parsedWidthMm !== undefined &&
+    (!Number.isFinite(parsedWidthMm) || parsedWidthMm <= 0)
+  ) {
+    return badRequest(
+      `Label width must be a positive number of millimetres; received "${labelWidthMm}".`,
+    );
+  }
 
   const started = Date.now();
   try {
-    const base64 = Buffer.from(await image.arrayBuffer()).toString("base64");
-    const label = await extractLabel(base64, image.type);
-    return NextResponse.json(verify(submission, label, Date.now() - started));
+    const bytes = Buffer.from(await image.arrayBuffer());
+    const base64 = bytes.toString("base64");
+
+    // Run alongside the transcription call rather than inside it. This is a
+    // pure pixel measurement (lib/typesize.ts): the model is not asked how big
+    // anything is, and no prompt or extraction schema knows this check exists.
+    // See docs/TYPE-SIZE-FEASIBILITY.md for the two model-based attempts that
+    // failed, and NFR-5 for why measurement never moves into the prompt.
+    const [label, typeSize] = await Promise.all([
+      extractLabel(base64, image.type),
+      // Never allowed to take the whole verification down with it. The other
+      // five checks are useful on their own, and this one degrades to the
+      // "not assessed" it already has a representation for.
+      measureWarningTypeSize(bytes, parsedWidthMm).catch(
+        (error): TypeSizeResult => {
+          console.error("Type-size measurement failed:", error);
+          return {
+            measured: false,
+            reason: "image-unreadable",
+            detail: "The type size could not be measured from this image.",
+          };
+        },
+      ),
+    ]);
+    return NextResponse.json(
+      verify(submission, label, Date.now() - started, typeSize),
+    );
   } catch (error) {
     // Log the real cause for operators; show agents something actionable.
     console.error("Verification failed:", error);

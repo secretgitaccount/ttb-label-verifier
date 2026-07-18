@@ -3,9 +3,12 @@
 **Requirement:** FR-10 — verify the Government Warning meets the minimum type
 size in 27 CFR 16.22 (≤237 mL: 1 mm · 237 mL–3 L: 2 mm · >3 L: 3 mm).
 
-**Result: not implementable to a standard that could justify a rejection.**
-FR-10 stays out of scope. This document records why, so the conclusion can be
-challenged rather than taken on faith.
+**Result of the model-based approaches: not implementable.** Both are recorded
+below, in full, because the reasoning that ruled them out is what pointed at the
+approach that worked.
+
+**FR-10 is now implemented** — by classical computer vision (`lib/typesize.ts`),
+not by the model. See *Third approach* at the end of this document.
 
 ---
 
@@ -163,3 +166,70 @@ Note also that both studies were only possible because ground truth was
 computable — the fixtures are rendered from HTML at known font sizes. On real
 photographed artwork there would have been nothing to check the model against,
 and the zero run-to-run variance would have looked like precision.
+
+
+---
+
+# Third approach: classical computer vision — implemented
+
+The two studies above rule out *the model* as a measuring instrument. They do
+not rule out measurement. Their own conclusion pointed here: "a classical CV
+measurement validated against ground truth is the only credible path."
+
+**This is implemented and shipped** in `lib/typesize.ts`. The model is not
+involved: measurement runs server-side on the uploaded pixels, concurrently with
+the transcription call rather than inside it, so no prompt changed.
+
+## Why it works where the model did not
+
+Thresholding, connected components and ink-row profiling are deterministic. The
+same image gives the same answer, and the answer can be checked against ground
+truth computed independently.
+
+| | Model, absolute | Model, ratio | Classical CV |
+|---|---|---|---|
+| Label boundary | not attempted | not attempted | **0px error** (620×840 detected, 620×840 true) |
+| Cap height | +22% (9px read as 11px) | −11% / +22%, anti-correlated | **0px error** at the working threshold, ±1px quantisation |
+| Error behaviour | flips sign with resolution | compounds in the ratio | no size-dependent drift, validated on synthetic text at 8–60px |
+| Scale source | image width (**22.5% wrong**) | none needed | detected label boundary |
+| Distortion | undetectable | undetectable | **refused** — rectangularity 1.0000 square-on vs 0.7985 at 7° |
+| Runtime | ~4s (a model call) | ~4s | **~7ms** |
+
+## The guard is the design
+
+Rotation, perspective and curvature all break rectangularity, so the module
+refuses them. Verified independently across 0.25°–45°, plus affine shear, all
+refused; JPEG at q30 still measures, so it is not simply refusing everything.
+
+Without the guard the naive pipeline returns a cap height of 898px on the tilted
+fixture — a confident, absurd answer. That is the same failure mode as the model
+studies, and the guard is what prevents it.
+
+**One limitation the first build missed**, found by adversarial review:
+rectangularity is scale-invariant, so an *anisotropically stretched* image stays
+a perfect rectangle and passes. Measured, a fixture stretched to 800×1400 read
+3.88mm against 2.74mm truth (+41%), and stretching an undersized label walked its
+verdict from FAIL to REVIEW to PASS — biased toward false approval, the direction
+that matters. The mitigation is an aspect-ratio check against an optionally
+supplied label height. **With width alone, anisotropic distortion remains
+undetectable**, and that is disclosed rather than papered over.
+
+## Verdict bands
+
+Uncertainty is ±1px on cap height plus an exact boundary, so ±0.17–0.19mm on the
+fixtures. Bands are 0.8×/1.2× of the threshold — wider than the instrument,
+which is the property both earlier attempts lacked.
+
+A cap below 4px is refused: that is a *detectability* floor, not a precision one.
+The spike proposed 8px on precision grounds, but the fixture representing the
+actual abuse case has a 6px cap, so an 8px floor would have refused to measure
+exactly the labels the check exists to catch. Precision near the threshold is
+handled by carrying the interval into the verdict, not by refusing to look.
+
+## Scope, stated plainly
+
+Flat, square-on artwork — which is what most COLA submissions are, since
+applicants generally submit the printed artwork file rather than a bottle photo.
+A photograph of a curved bottle will be refused and report "not assessed". The
+practical refusal rate on real submissions is unmeasured; every fixture here is a
+clean synthetic render, and that is the honest limit of what these studies show.

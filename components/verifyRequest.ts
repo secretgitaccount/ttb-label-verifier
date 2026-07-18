@@ -97,6 +97,16 @@ export async function verifyLabel(
   if (application.countryOfOrigin?.trim()) {
     form.append("countryOfOrigin", application.countryOfOrigin.trim());
   }
+  // Millimetres survive the downscale above untouched, because the server
+  // derives its scale from the *detected label width in the image it receives*,
+  // not from any assumed resolution — shrink both and mm-per-pixel is
+  // unchanged. What downscaling does cost is precision: cap height is an
+  // integer pixel count, so a smaller image spends more of the error budget on
+  // quantisation. At MAX_EDGE=1200 a warning still lands around 10px, the same
+  // order as the fixtures this was validated against.
+  if (application.labelWidthMm?.trim()) {
+    form.append("labelWidthMm", application.labelWidthMm.trim());
+  }
 
   const response = await fetch("/api/verify", { method: "POST", body: form });
   const payload = await response.json();
