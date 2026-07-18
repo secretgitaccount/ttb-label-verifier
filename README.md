@@ -5,11 +5,37 @@ and tells an agent, in one glance, whether they match.
 
 Built for the take-home brief in `../instructions/README.md`.
 
-Reviewer shortcuts: [Approach](#approach) · [Tools used](#tools-used) ·
+Reviewer shortcuts: [Requirements coverage](#requirements-coverage) ·
+[Approach](#approach) · [Tools used](#tools-used) ·
 [Assumptions](#assumptions) · [What the interviews asked for](#what-the-interviews-asked-for) ·
 [Limitations and trade-offs](#limitations-and-trade-offs) ·
 [Deployment constraints](#deployment-constraints) ·
 [Known deployment blocker](#known-deployment-blocker-outbound-network-access)
+
+---
+
+## Requirements coverage
+
+**Every requirement achievable in this environment is implemented and verified —
+35 of the 38 tracked in [`docs/PRD.md`](docs/PRD.md).** That includes everything
+stated in the brief's technical requirements and everything raised in the
+stakeholder interviews, down to details mentioned once in passing: the exact
+statutory warning text, the all-caps *and bold* heading, `STONE'S THROW` versus
+`Stone's Throw`, batch upload, and photographs taken at an angle.
+
+The three exceptions are listed below with what each actually depends on. None
+is an oversight; each was investigated, and two produced measurements that are
+in this repository.
+
+| Requirement | Status | What it depends on |
+|---|---|---|
+| **NFR-1** — round trip under 5s | Measured, not certified | **The deployment environment.** Latest n=10: 4.22s median, 4.67s p90, all ten under 5s. But three samples on near-identical builds gave p90 of 4.67s, 4.95s and 5.02s, with tails to 6.98s — repeat variance exceeds the effect of any change we made. The tail is connection setup and provider queueing, not our code: reducing image size to 700px still produced runs over 5s. Certifying this needs measurement on TTB's own network, which we cannot reach. |
+| **NFR-7** — runs behind a restrictive firewall | Designed for, unproven | **Access we do not have.** Marcus Williams noted TTB blocks outbound ML endpoints. The provider seam is real and tested (`lib/providers/`), so the model is swappable without touching the compliance engine. An Azure Document Intelligence adapter is written, but validating it requires an Azure account and TTB's network. It also carries a genuine cost we did not hide: OCR does not report font weight, so adopting it loses bold detection. See [`docs/MIGRATION.md`](docs/MIGRATION.md). |
+| **FR-10** — warning meets minimum type size | Attempted twice, rejected on evidence | **The technique, not the environment.** This one is honestly within reach — just not this way. Two model-based approaches were built and measured against pixel-decoded ground truth: absolute millimetre measurement (±30–40% error against a 20% decision band) and a scale-free ratio between two texts on the same label (−27%, worse than either input, because the model's vertical bias is anti-correlated rather than common). Both are written up in [`docs/TYPE-SIZE-FEASIBILITY.md`](docs/TYPE-SIZE-FEASIBILITY.md). A classical computer-vision measurement validated against ground truth would work; it was out of scope for a time-boxed prototype, and shipping a measurement we could not trust would be worse than not shipping one. |
+
+Two of the three are gated on the deployment environment. The third is a
+deliberate scope decision with the alternative named. All three are recorded in
+the PRD rather than left for a reviewer to discover.
 
 ---
 
