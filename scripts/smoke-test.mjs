@@ -53,10 +53,29 @@ form.append("classType", flag("class", "Kentucky Straight Bourbon Whiskey"));
 form.append("alcoholContent", flag("abv", "45% Alc./Vol. (90 Proof)"));
 form.append("netContents", flag("net", "750 mL"));
 
+// Optional TTB elements. Sent only when supplied — an empty value would assert
+// a claim the application never made. See lib/compare.ts.
+const bottler = flag("bottler", null);
+const origin = flag("origin", null);
+if (bottler) form.append("bottlerAddress", bottler);
+if (origin) form.append("countryOfOrigin", origin);
+
 const started = Date.now();
 const response = await fetch(`${baseUrl}/api/verify`, { method: "POST", body: form });
 const elapsed = Date.now() - started;
-const payload = await response.json();
+
+// A hosting proxy can answer with plain text (e.g. "upstream error" while a
+// container restarts). Report that as what it is rather than dying in JSON.parse.
+const body = await response.text();
+let payload;
+try {
+  payload = JSON.parse(body);
+} catch {
+  console.error(`✗ HTTP ${response.status}: non-JSON response from ${baseUrl}`);
+  console.error(`  ${body.slice(0, 200)}`);
+  console.error("  If deploying, the instance may still be restarting — retry shortly.");
+  process.exit(1);
+}
 
 if (!response.ok) {
   console.error(`✗ HTTP ${response.status}: ${payload.error}`);
