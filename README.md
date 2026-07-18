@@ -395,17 +395,20 @@ estimates. They were not benchmarked and contain no verified pricing.
 - **Batch is client-orchestrated.** 300 labels means 300 requests from the
   browser. Fine for a prototype; a production version would want a queue with
   a resumable job, since closing the tab currently loses in-flight progress.
-- **Type size and placement are not checked.** Heading weight is; heading and
-  body *size* are not, nor is placement. A warning that is correct, capitalised,
-  bold, and half the required height passes. That needs pixel measurement
-  against a known label dimension, not transcription.
+- **Type size and placement are not checked, and two attempts to add it were
+  rejected on evidence.** Heading weight is checked; *size* is not, nor is
+  placement. A warning that is correct, capitalised, bold, and half the required
+  height passes. Absolute millimetre measurement carried ±30–40% error against a
+  20% decision band; a scale-free ratio between two texts on the same label was
+  worse still (−27%), because the model's vertical bias turned out to be
+  anti-correlated between measurements rather than common to them. The bias also
+  moves with glyph size and prompt wording, so it cannot be calibrated out. Both
+  studies, with pixel-decoded ground truth, are in
+  [`docs/TYPE-SIZE-FEASIBILITY.md`](docs/TYPE-SIZE-FEASIBILITY.md). A classical
+  CV measurement validated against ground truth is the only credible path.
 - **Similarity threshold (0.82) and the 0.15% ABV tolerance are unvalidated
   against real data.** Both are defensible readings of the regulation rather
   than tuned constants; they should be checked against real mismatch data.
-- **Two fields are built but unreachable.** Bottler address and country of
-  origin have types, an extraction schema, and comparison logic, but no UI or
-  CSV input feeds them. They cost output tokens on every request and compare
-  nothing.
 - **No audit trail.** A production compliance tool would need to record who
   checked what and when.
 - **Depends on a third-party API being reachable.** See the section above.

@@ -90,3 +90,76 @@ any verdict depends on it.
 
 4 API calls. Ground truth by direct pixel decoding. Scripts were written to a
 scratchpad and no repository file was modified during the study.
+
+---
+
+# Second study: relative measurement
+
+The study above rejected absolute millimetre measurement but left an opening — if
+the model's vertical bias were a stable multiplicative factor, it would **cancel
+in a ratio**. Measure the warning's cap height against another piece of text on
+the same label, and no physical scale is needed at all.
+
+That reframing also changes the goal: not "does this comply with 16.22" (written
+in millimetres) but "is this warning conspicuously smaller than the rest of the
+label" — the abuse actually described in the interviews.
+
+**Result: the hypothesis is false. The ratio is worse than either input.**
+
+## Measurement
+
+Ground truth by direct pixel decoding of `samples/old-tom.png`, profiling ink
+rows to isolate glyphs, with the ink threshold swept from 60 to 200 to bound
+uncertainty. Cross-checked against the CSS: Helvetica cap-height ratio ≈0.717 ×
+11.5px ≈ 8.2; Georgia ≈0.692 × 25px ≈ 17.3 — consistent with the decoded pixels,
+confirming cap height was measured rather than ascender extent.
+
+| Quantity | Model | Ground truth | Error |
+|---|---|---|---|
+| Warning cap height ("G" of GOVERNMENT) | 8 px | 9 px | −11.1% |
+| Reference cap height ("K" of Kentucky) | 22 px | 18 px | +22.2% |
+| **Ratio** | **≈0.36** | **0.500** | **−27.3%** |
+
+Identical on all three runs. Zero variance, again.
+
+## Why it fails
+
+The hypothesis required a **common** multiplicative bias. The errors are instead
+**anti-correlated** — one under-reads, the other over-reads — so they compound
+rather than cancel. The ratio error (−27.3%) exceeds both input errors.
+
+At that magnitude the instrument cannot separate a compliant label from the
+abuse case. A warning set at half the class-type height reads as roughly a
+third, which would flag `old-tom` — a compliant fixture — as suspicious. The
+detector's false alarms would land on exactly the labels that are fine.
+
+Even the most charitable ground truth (opposite ends of both threshold bands,
+which is not a defensible reading of the pixels) leaves −13.6% error. The centre
+estimate is −27%. The bar was under 15% and stable.
+
+## The finding that closes the question
+
+The first study measured a +22% over-read and called it stable. Here the same
++22% appeared on the class/type text but **not** on the warning, where an
+explicit cap-height prompt produced an under-read instead.
+
+**The bias is not a property of the model's vertical perception.** It varies with
+glyph size and with how the question is asked. So it cannot be calibrated out —
+not by a constant, and not by a ratio, because there is no consistent factor to
+cancel.
+
+## Standing conclusion
+
+Two independent approaches, two negative results, one requirement. FR-10 stays
+out of scope.
+
+What the model does well here is transcription and gross perceptual distinctions
+— *is this heading heavier than the body text* is answered reliably enough to
+carry a compliance check (FR-7). Fine-grained metric estimation is a different
+capability, and it is not present. Anything depending on it needs a classical CV
+measurement validated against ground truth, not a visual estimate.
+
+Note also that both studies were only possible because ground truth was
+computable — the fixtures are rendered from HTML at known font sizes. On real
+photographed artwork there would have been nothing to check the model against,
+and the zero run-to-run variance would have looked like precision.

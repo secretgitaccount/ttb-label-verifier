@@ -34,6 +34,17 @@ These are recorded for traceability. No further work is required.
 | PRP-18 | Document firewall risk and model-swap path | DONE — `docs/MIGRATION.md` |
 | PRP-19 | Optional TTB fields (OD-1) | DONE — reverted; FR-8/FR-9 now OUT and documented as a known gap |
 
+## Closed as DO_NOT_BUILD
+
+| PRP | Title | Outcome |
+|---|---|---|
+| PRP-21 | Absolute type-size measurement | Rejected on evidence — ±30–40% error against a 20% decision band |
+| PRP-23 | Relative type-size detector | Rejected on evidence — the model's vertical bias is anti-correlated between measurements, so the ratio error (−27%) exceeds both inputs. Also showed the bias is not stable across prompts, so no calibration is possible |
+
+Both are written up in `../TYPE-SIZE-FEASIBILITY.md`. Together they close FR-10
+against model-based measurement; a classical CV approach validated against ground
+truth remains the only credible path.
+
 ## Open
 
 None. Remaining known gaps are recorded in the PRD (FR-10 type size, NFR-7

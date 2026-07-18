@@ -45,7 +45,7 @@ It does **not** approve or reject applications. It assists a review.
 | FR-7 | Verify the heading is **bold** | DONE | unit tests + `unbolded-warning` fixture returns FAIL naming bold |
 | FR-8 | Verify name/address of bottler or producer | DONE | optional form input + CSV column; `imported-scotch` fixture proves extraction |
 | FR-9 | Verify country of origin for imports | DONE | same; absent-from-label returns Check, never Problem |
-| FR-10 | Verify minimum type size of the warning | OUT | **measured and rejected** — see `TYPE-SIZE-FEASIBILITY.md`; ±30–40% error against a 20% band |
+| FR-10 | Verify minimum type size of the warning | OUT | **two approaches measured and rejected** — see `TYPE-SIZE-FEASIBILITY.md`. Absolute: ±30–40% error. Relative ratio: −27% error, worse than its inputs |
 
 FR-7 was the highest-severity item — a correctly capitalised heading in light
 type would have passed, a **false approval**. Closed and demonstrated on
