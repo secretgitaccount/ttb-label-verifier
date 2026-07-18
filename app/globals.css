@@ -1,0 +1,26 @@
+@import "tailwindcss";
+
+@theme {
+  --color-pass: oklch(0.55 0.13 150);
+  --color-pass-bg: oklch(0.96 0.03 150);
+  --color-review: oklch(0.62 0.14 75);
+  --color-review-bg: oklch(0.97 0.05 85);
+  --color-fail: oklch(0.53 0.19 25);
+  --color-fail-bg: oklch(0.96 0.03 25);
+}
+
+:root {
+  /* Half the review team is over 50 and Dave still prints his emails.
+     Baseline type is deliberately larger than a typical web app. */
+  font-size: 18px;
+}
+
+body {
+  @apply bg-slate-100 text-slate-900 antialiased;
+}
+
+/* Every interactive element gets a visible focus ring — several agents
+   navigate by keyboard. */
+:focus-visible {
+  @apply outline-2 outline-offset-2 outline-blue-700;
+}
