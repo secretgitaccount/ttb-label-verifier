@@ -14,7 +14,7 @@ import type {
   VerificationResult,
   Verdict,
 } from "./types.ts";
-import { checkWarningText } from "./warning.ts";
+import { checkWarningText, collapseWhitespace, GOVERNMENT_WARNING } from "./warning.ts";
 
 /** Strip case, punctuation and spacing noise: "STONE'S THROW" ~ "Stone's Throw". */
 export function normalize(text: string): string {
@@ -104,6 +104,7 @@ function compareText(
     reason: `Label says "${found}", application says "${expected}".`,
   };
 }
+
 
 /** Pull the ABV percentage out of strings like "45% Alc./Vol. (90 Proof)". */
 export function parseAbv(text: string): number | null {
@@ -255,20 +256,57 @@ function compareWarning(label: ExtractedLabel): FieldResult {
   // Prefer the model's direct reading of the artwork for the caps question —
   // it can see rendering that survives transcription poorly.
   const headingAllCaps = label.governmentWarning.headingAllCaps ?? check.headingAllCaps;
+  const headingBold = label.governmentWarning.headingBold;
 
-  if (!headingAllCaps) {
-    return {
-      ...base,
-      verdict: "FAIL",
-      reason: 'The "GOVERNMENT WARNING:" heading must be in all capital letters.',
-    };
+  // A label can be wrong in more than one way at once. Reporting only the
+  // first defect sends the applicant an incomplete correction and buys a
+  // second bad submission, so collect every hard defect and report them all.
+  // Order is severity order: altered wording, then capitalisation, then weight.
+  const defects: string[] = [];
+
+  // Is the transcription the statutory text modulo capitalisation? If so the
+  // only textual defect is a caps defect, and the caps branch below already
+  // says so — don't say it twice.
+  const differsOnlyByCase =
+    collapseWhitespace(label.governmentWarning.text).toLowerCase() ===
+    collapseWhitespace(GOVERNMENT_WARNING).toLowerCase();
+
+  if (!check.textExact && !differsOnlyByCase) {
+    defects.push(
+      check.discrepancy ?? "Warning text does not match the required statement.",
+    );
   }
 
-  if (!check.textExact) {
+  if (!headingAllCaps) {
+    defects.push('The "GOVERNMENT WARNING:" heading must be in all capital letters.');
+  } else if (!check.textExact && differsOnlyByCase) {
+    defects.push("Wording is correct but capitalization differs from the required text.");
+  }
+
+  // 27 CFR 16.21 requires the heading to be bold as well as capitalised, and a
+  // correctly-capitalised heading in light type is exactly the false approval
+  // this check exists to prevent.
+  if (headingBold === false) {
+    defects.push('The "GOVERNMENT WARNING:" heading must be printed in bold type.');
+  }
+
+  if (defects.length > 0) {
+    return { ...base, verdict: "FAIL", reason: defects.join(" ") };
+  }
+
+  // Bold is a visual property read off artwork, not text we can re-derive from
+  // the transcription — so unlike the caps check there is no second source to
+  // fall back on. When the model reports null it is telling us it could not
+  // see the difference, and converting that into a FAIL would reject compliant
+  // labels for being photographed badly. REVIEW is the honest verdict for an
+  // uncertain signal: it never auto-approves, and it puts the one thing a
+  // human can settle in front of a human.
+  if (headingBold === null || headingBold === undefined) {
     return {
       ...base,
-      verdict: "FAIL",
-      reason: check.discrepancy ?? "Warning text does not match the required statement.",
+      verdict: "REVIEW",
+      reason:
+        'Warning text matches, but whether the "GOVERNMENT WARNING:" heading is printed in bold could not be determined from this image. Check the heading weight.',
     };
   }
 
@@ -298,6 +336,9 @@ export function verify(
     compareNetContents(application.netContents, label.netContents),
     compareWarning(label),
   ];
+
+  // Only checked when the application asserts them. Nothing is inferred from
+  // their absence: a domestic label with no country of origin is not a defect.
 
   let verdict = rollUp(fields);
 

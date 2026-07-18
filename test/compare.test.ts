@@ -22,6 +22,7 @@ function label(overrides: Partial<ExtractedLabel> = {}): ExtractedLabel {
       present: true,
       text: GOVERNMENT_WARNING,
       headingAllCaps: true,
+      headingBold: true,
     },
     imageQuality: { readable: true, issues: [] },
     ...overrides,
@@ -64,7 +65,12 @@ test("title-case government warning is rejected", () => {
   const result = verify(
     application,
     label({
-      governmentWarning: { present: true, text: titleCase, headingAllCaps: false },
+      governmentWarning: {
+        present: true,
+        text: titleCase,
+        headingAllCaps: false,
+        headingBold: true,
+      },
     }),
     0,
   );
@@ -77,7 +83,12 @@ test("altered warning wording is rejected and located", () => {
   const result = verify(
     application,
     label({
-      governmentWarning: { present: true, text: altered, headingAllCaps: true },
+      governmentWarning: {
+        present: true,
+        text: altered,
+        headingAllCaps: true,
+        headingBold: true,
+      },
     }),
     0,
   );
@@ -95,12 +106,167 @@ test("a missing warning fails", () => {
   const result = verify(
     application,
     label({
-      governmentWarning: { present: false, text: null, headingAllCaps: null },
+      governmentWarning: {
+        present: false,
+        text: null,
+        headingAllCaps: null,
+        headingBold: null,
+      },
     }),
     0,
   );
   assert.equal(field(result, "governmentWarning").verdict, "FAIL");
 });
+
+test("a correctly capitalised but unbolded warning heading fails", () => {
+  const result = verify(
+    application,
+    label({
+      governmentWarning: {
+        present: true,
+        text: GOVERNMENT_WARNING,
+        headingAllCaps: true,
+        headingBold: false,
+      },
+    }),
+    0,
+  );
+  const warning = field(result, "governmentWarning");
+  assert.equal(warning.verdict, "FAIL");
+  assert.match(warning.reason, /bold/);
+  assert.equal(result.verdict, "FAIL");
+});
+
+test("an uncertain bold reading is a review, never an approval", () => {
+  const result = verify(
+    application,
+    label({
+      governmentWarning: {
+        present: true,
+        text: GOVERNMENT_WARNING,
+        headingAllCaps: true,
+        headingBold: null,
+      },
+    }),
+    0,
+  );
+  const warning = field(result, "governmentWarning");
+  assert.equal(warning.verdict, "REVIEW");
+  assert.match(warning.reason, /bold/);
+  assert.equal(result.verdict, "REVIEW");
+});
+
+test("a wording defect outranks an uncertain bold reading", () => {
+  const result = verify(
+    application,
+    label({
+      governmentWarning: {
+        present: true,
+        text: GOVERNMENT_WARNING.replace("birth defects", "birth problems"),
+        headingAllCaps: true,
+        headingBold: null,
+      },
+    }),
+    0,
+  );
+  assert.equal(field(result, "governmentWarning").verdict, "FAIL");
+});
+
+test("a label with altered wording AND a light heading names both defects", () => {
+  const result = verify(
+    application,
+    label({
+      governmentWarning: {
+        present: true,
+        text: GOVERNMENT_WARNING.replace("should not drink", "may wish to avoid"),
+        headingAllCaps: true,
+        headingBold: false,
+      },
+    }),
+    0,
+  );
+  const warning = field(result, "governmentWarning");
+  assert.equal(warning.verdict, "FAIL");
+  assert.match(warning.reason, /reads "may"/); // the wording defect
+  assert.match(warning.reason, /bold/); // the weight defect
+  assert.equal(result.verdict, "FAIL");
+});
+
+test("a title-case heading in light type names both defects", () => {
+  const result = verify(
+    application,
+    label({
+      governmentWarning: {
+        present: true,
+        text: GOVERNMENT_WARNING.replace("GOVERNMENT WARNING:", "Government Warning:"),
+        headingAllCaps: false,
+        headingBold: false,
+      },
+    }),
+    0,
+  );
+  const warning = field(result, "governmentWarning");
+  assert.equal(warning.verdict, "FAIL");
+  assert.match(warning.reason, /capital letters/);
+  assert.match(warning.reason, /bold/);
+});
+
+test("a pure capitalisation defect is reported once, not twice", () => {
+  const result = verify(
+    application,
+    label({
+      governmentWarning: {
+        present: true,
+        text: GOVERNMENT_WARNING.replace("GOVERNMENT WARNING:", "Government Warning:"),
+        headingAllCaps: false,
+        headingBold: true,
+      },
+    }),
+    0,
+  );
+  const reason = field(result, "governmentWarning").reason;
+  assert.equal(reason.match(/capital/gi)?.length, 1);
+});
+
+test("wording defects are reported ahead of weight defects", () => {
+  const result = verify(
+    application,
+    label({
+      governmentWarning: {
+        present: true,
+        text: GOVERNMENT_WARNING.replace("birth defects", "birth problems"),
+        headingAllCaps: true,
+        headingBold: false,
+      },
+    }),
+    0,
+  );
+  const reason = field(result, "governmentWarning").reason;
+  assert.ok(reason.indexOf("problems") < reason.indexOf("bold"));
+});
+
+test("an uncertain bold reading alongside a wording defect stays a FAIL", () => {
+  const result = verify(
+    application,
+    label({
+      governmentWarning: {
+        present: true,
+        text: GOVERNMENT_WARNING.replace("birth defects", "birth problems"),
+        headingAllCaps: true,
+        headingBold: null,
+      },
+    }),
+    0,
+  );
+  const warning = field(result, "governmentWarning");
+  assert.equal(warning.verdict, "FAIL");
+  assert.match(warning.reason, /problems/);
+});
+
+
+
+
+
 
 test("net contents match across units", () => {
   const result = verify(
@@ -161,6 +327,7 @@ test("an unreadable photo still fails on a warning defect it could read", () => 
         present: true,
         text: GOVERNMENT_WARNING.replace("GOVERNMENT WARNING:", "Government Warning:"),
         headingAllCaps: false,
+        headingBold: true,
       },
       imageQuality: { readable: false, issues: ["blurry"] },
     }),

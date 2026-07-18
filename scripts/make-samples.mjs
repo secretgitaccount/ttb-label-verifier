@@ -45,6 +45,9 @@ function labelHtml({ brand, classType, abv, net, warning, tilt = 0 }) {
   .warning { font-size: 11.5px; text-align: left; line-height: 1.45;
     margin-top: 26px; font-family: Helvetica, Arial, sans-serif; }
   .warning b { font-weight: 700; }
+  /* Isolates weight from capitalisation: the heading stays ALL CAPS but is
+     set at the same weight as the body sentences that follow it. */
+  .warning .plain-heading { font-weight: 400; }
 </style>
 <div class="label">
   <div style="font-size:15px; letter-spacing:4px;">EST. 1897</div>
@@ -80,6 +83,20 @@ const SAMPLES = [
       abv: "45% Alc./Vol. (90 Proof)",
       net: "750 mL",
       warning: WARNING.replace("GOVERNMENT WARNING:", "<b>Government Warning:</b>"),
+    }),
+  },
+  {
+    name: "unbolded-warning",
+    note: "warning heading is ALL CAPS but regular weight — must be rejected",
+    html: labelHtml({
+      brand: "OLD TOM DISTILLERY",
+      classType: "Kentucky Straight Bourbon Whiskey",
+      abv: "45% Alc./Vol. (90 Proof)",
+      net: "750 mL",
+      warning: WARNING.replace(
+        "GOVERNMENT WARNING:",
+        '<span class="plain-heading">GOVERNMENT WARNING:</span>',
+      ),
     }),
   },
   {

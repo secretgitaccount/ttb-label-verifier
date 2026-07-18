@@ -7,7 +7,16 @@
 import Anthropic from "@anthropic-ai/sdk";
 import type { ExtractedLabel } from "./types.ts";
 
-const client = new Anthropic();
+/**
+ * Constructed on first use rather than at import time: the SDK throws when no
+ * API key is present, which would make this module impossible to import from a
+ * unit test that only exercises the validator.
+ */
+let client: Anthropic | undefined;
+function getClient(): Anthropic {
+  client ??= new Anthropic();
+  return client;
+}
 
 /**
  * Transcription is a perception task, so the cheapest model that reads small
@@ -47,6 +56,14 @@ part of the text: do not drop it, and do not begin the transcription at "(1)".
 
 Set governmentWarning.headingAllCaps by looking at how the heading is actually
 printed: true only if "GOVERNMENT WARNING:" appears in full capital letters.
+
+Set governmentWarning.headingBold by looking at the weight of the type: true if
+the heading is printed in noticeably heavier strokes than the sentences that
+follow it, false if it is the same weight as that body text. If the artwork is
+too small, too blurry, or too stylised for you to tell the two apart, return
+null. Do not guess — null is the correct answer when you cannot see the
+difference.
+
 
 Set imageQuality.readable to false only when glare, blur, angle, or resolution
 genuinely prevent you from reading part of the label. A photograph taken at an
@@ -88,8 +105,15 @@ const OUTPUT_SCHEMA = {
           type: ["boolean", "null"],
           description: 'True only if "GOVERNMENT WARNING:" is printed in all capitals.',
         },
+        headingBold: {
+          type: ["boolean", "null"],
+          description:
+            'True if the "GOVERNMENT WARNING:" heading is printed in noticeably ' +
+            "heavier type than the sentences that follow it, false if it is the " +
+            "same weight, null if the artwork is too small or unclear to tell.",
+        },
       },
-      required: ["present", "text", "headingAllCaps"],
+      required: ["present", "text", "headingAllCaps", "headingBold"],
       additionalProperties: false,
     },
     imageQuality: {
@@ -117,11 +141,120 @@ const OUTPUT_SCHEMA = {
   additionalProperties: false,
 } as const;
 
+/**
+ * Structured outputs make a malformed response unlikely, not impossible, and
+ * this is the seam where untrusted model JSON becomes an ExtractedLabel that
+ * lib/compare.ts trusts. Validating here means a bad payload fails with one
+ * clear sentence instead of surfacing three calls later as a null dereference.
+ *
+ * Messages are written for the agent reading them: describeFailure in
+ * route.ts passes our own Errors through to the screen verbatim.
+ */
+function malformed(detail: string): Error {
+  return new Error(
+    `The label was read but the response was not in the expected format (${detail}). Try again.`,
+  );
+}
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/** A field the schema declares as `["string", "null"]`. */
+function nullableString(source: Record<string, unknown>, key: string): string | null {
+  const value = source[key];
+  if (value === null) return null;
+  if (typeof value === "string") return value;
+  if (value === undefined) throw malformed(`${key} is missing`);
+  throw malformed(`${key} should be text but was ${typeof value}`);
+}
+
+/** A field the schema declares as `["boolean", "null"]`. */
+function nullableBoolean(
+  source: Record<string, unknown>,
+  path: string,
+  key: string,
+): boolean | null {
+  const value = source[key];
+  if (value === null) return null;
+  if (typeof value === "boolean") return value;
+  if (value === undefined) throw malformed(`${path}.${key} is missing`);
+  throw malformed(`${path}.${key} should be true or false but was ${typeof value}`);
+}
+
+/**
+ * Narrows a parsed model response to ExtractedLabel, or throws an Error whose
+ * message is already fit to show an agent. Exported for unit testing.
+ */
+export function validateExtractedLabel(parsed: unknown): ExtractedLabel {
+  if (!isPlainObject(parsed)) {
+    throw malformed("the response was not an object");
+  }
+
+  const warning = parsed.governmentWarning;
+  if (warning === undefined) throw malformed("governmentWarning is missing");
+  if (!isPlainObject(warning)) throw malformed("governmentWarning was not an object");
+
+  if (typeof warning.present !== "boolean") {
+    throw malformed(
+      warning.present === undefined
+        ? "governmentWarning.present is missing"
+        : `governmentWarning.present should be true or false but was ${typeof warning.present}`,
+    );
+  }
+
+  const quality = parsed.imageQuality;
+  if (quality === undefined) throw malformed("imageQuality is missing");
+  if (!isPlainObject(quality)) throw malformed("imageQuality was not an object");
+
+  if (typeof quality.readable !== "boolean") {
+    throw malformed(
+      quality.readable === undefined
+        ? "imageQuality.readable is missing"
+        : `imageQuality.readable should be true or false but was ${typeof quality.readable}`,
+    );
+  }
+
+  if (!Array.isArray(quality.issues)) {
+    throw malformed(
+      quality.issues === undefined
+        ? "imageQuality.issues is missing"
+        : "imageQuality.issues was not a list",
+    );
+  }
+  if (!quality.issues.every((issue) => typeof issue === "string")) {
+    throw malformed("imageQuality.issues contained a non-text entry");
+  }
+
+  return {
+    brandName: nullableString(parsed, "brandName"),
+    classType: nullableString(parsed, "classType"),
+    alcoholContent: nullableString(parsed, "alcoholContent"),
+    netContents: nullableString(parsed, "netContents"),
+    governmentWarning: {
+      present: warning.present,
+      text: nullableString(warning, "text"),
+      headingAllCaps: nullableBoolean(warning, "governmentWarning", "headingAllCaps"),
+      // An absent bold reading is the uncertain path, not a defect: compare.ts
+      // already routes null to REVIEW rather than guessing. Treating it as an
+      // error here would reject a response that says nothing false.
+      headingBold:
+        warning.headingBold === undefined
+          ? null
+          : nullableBoolean(warning, "governmentWarning", "headingBold"),
+    },
+    imageQuality: {
+      readable: quality.readable,
+      issues: quality.issues as string[],
+    },
+  };
+}
+
 export async function extractLabel(
   imageBase64: string,
   mediaType: SupportedMediaType,
 ): Promise<ExtractedLabel> {
-  const response = await client.messages.create({
+  const response = await getClient().messages.create({
     model: MODEL,
     max_tokens: 2048,
     system: SYSTEM_PROMPT,
@@ -155,5 +288,5 @@ export async function extractLabel(
     throw new Error("The model returned no transcription for this image.");
   }
 
-  return JSON.parse(textBlock.text) as ExtractedLabel;
+  return validateExtractedLabel(JSON.parse(textBlock.text));
 }

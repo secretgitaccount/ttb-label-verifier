@@ -34,6 +34,11 @@ export interface ExtractedLabel {
     text: string | null;
     /** Is the "GOVERNMENT WARNING:" heading printed in all caps? */
     headingAllCaps: boolean | null;
+    /**
+     * Is the heading printed in bold (heavier than the body of the warning)?
+     * null means the model could not tell — an uncertain signal, not a defect.
+     */
+    headingBold: boolean | null;
   };
   imageQuality: {
     readable: boolean;
