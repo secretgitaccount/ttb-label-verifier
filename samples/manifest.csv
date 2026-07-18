@@ -1,4 +1,7 @@
-file_name,brand_name,class_type,alcohol_content,net_contents
-old-tom.jpg,OLD TOM DISTILLERY,Kentucky Straight Bourbon Whiskey,45% Alc./Vol. (90 Proof),750 mL
-stones-throw.jpg,Stone's Throw,Straight Rye Whiskey,50% Alc./Vol. (100 Proof),750 mL
-harbor-light.png,HARBOR LIGHT,California Chardonnay,13.5% Alc./Vol.,750 mL
+file_name,brand_name,class_type,alcohol_content,net_contents,bottler_address,country_of_origin
+old-tom.png,OLD TOM DISTILLERY,Kentucky Straight Bourbon Whiskey,45% Alc./Vol. (90 Proof),750 mL,,
+title-case-warning.png,OLD TOM DISTILLERY,Kentucky Straight Bourbon Whiskey,45% Alc./Vol. (90 Proof),750 mL,,
+unbolded-warning.png,OLD TOM DISTILLERY,Kentucky Straight Bourbon Whiskey,45% Alc./Vol. (90 Proof),750 mL,,
+wrong-abv.png,OLD TOM DISTILLERY,Kentucky Straight Bourbon Whiskey,45% Alc./Vol. (90 Proof),750 mL,,
+stones-throw-tilted.png,Stone's Throw,Straight Rye Whiskey,50% Alc./Vol. (100 Proof),750 mL,,
+imported-scotch.png,GLEN CAIRNGORM,Single Malt Scotch Whisky,43% Alc./Vol. (86 Proof),750 mL,"Imported and bottled by Cairngorm Imports Ltd., Portland, OR",Product of Scotland

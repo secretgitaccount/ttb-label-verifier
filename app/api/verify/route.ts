@@ -2,7 +2,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import { NextResponse } from "next/server";
 import { extractLabel, isSupportedMediaType, SUPPORTED_MEDIA_TYPES } from "@/lib/extract";
 import { verify } from "@/lib/compare";
-import type { ApplicationRecord } from "@/lib/types";
+import type { ApplicationRecord, ApplicationSubmission } from "@/lib/types";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -112,11 +112,21 @@ export async function POST(request: Request) {
     return badRequest(`Missing application values: ${missing.join(", ")}.`);
   }
 
+  // Deliberately assembled *after* the required-field check and only when the
+  // caller actually sent a value: a domestic spirits application carries
+  // neither of these, and an empty string here would make compare.ts assert
+  // something the applicant never claimed.
+  const submission: ApplicationSubmission = { ...application };
+  const bottlerAddress = String(form.get("bottlerAddress") ?? "").trim();
+  const countryOfOrigin = String(form.get("countryOfOrigin") ?? "").trim();
+  if (bottlerAddress) submission.bottlerAddress = bottlerAddress;
+  if (countryOfOrigin) submission.countryOfOrigin = countryOfOrigin;
+
   const started = Date.now();
   try {
     const base64 = Buffer.from(await image.arrayBuffer()).toString("base64");
     const label = await extractLabel(base64, image.type);
-    return NextResponse.json(verify(application, label, Date.now() - started));
+    return NextResponse.json(verify(submission, label, Date.now() - started));
   } catch (error) {
     // Log the real cause for operators; show agents something actionable.
     console.error("Verification failed:", error);

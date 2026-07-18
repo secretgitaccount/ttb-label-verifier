@@ -10,6 +10,8 @@ function payload(): Record<string, unknown> {
     classType: "Kentucky Straight Bourbon Whiskey",
     alcoholContent: "45% Alc./Vol. (90 Proof)",
     netContents: "750 mL",
+    bottlerAddress: "Bottled by Old Tom Distillery, Bardstown, KY",
+    countryOfOrigin: null,
     governmentWarning: {
       present: true,
       text: GOVERNMENT_WARNING,
@@ -46,6 +48,31 @@ test("nulls are preserved rather than rejected", () => {
   assert.equal(result.brandName, null);
   assert.equal(result.governmentWarning.present, false);
   assert.equal(result.governmentWarning.text, null);
+});
+
+test("the optional label statements survive transcription", () => {
+  const result = validateExtractedLabel({
+    ...payload(),
+    countryOfOrigin: "Product of Scotland",
+  });
+  assert.equal(result.bottlerAddress, "Bottled by Old Tom Distillery, Bardstown, KY");
+  assert.equal(result.countryOfOrigin, "Product of Scotland");
+});
+
+test("absent optional statements read as null rather than as an error", () => {
+  const { bottlerAddress, countryOfOrigin, ...rest } = payload();
+  void bottlerAddress;
+  void countryOfOrigin;
+  const result = validateExtractedLabel(rest);
+  assert.equal(result.bottlerAddress, null);
+  assert.equal(result.countryOfOrigin, null);
+});
+
+test("an optional statement of the wrong type is still rejected", () => {
+  assert.throws(
+    () => validateExtractedLabel({ ...payload(), countryOfOrigin: 42 }),
+    /countryOfOrigin should be text/,
+  );
 });
 
 test("an absent headingBold reads as uncertain, not as an error", () => {

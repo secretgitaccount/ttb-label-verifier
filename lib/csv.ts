@@ -5,7 +5,7 @@
  * fields containing commas and embedded newlines are routine.
  */
 
-import type { ApplicationRecord } from "./types.ts";
+import type { ApplicationSubmission, OptionalApplicationFields } from "./types.ts";
 
 export function parseCsv(input: string): string[][] {
   const rows: string[][] = [];
@@ -57,7 +57,16 @@ export function parseCsv(input: string): string[][] {
   return rows.filter((r) => r.some((cell) => cell.trim() !== ""));
 }
 
-type ManifestKey = keyof ApplicationRecord | "fileName";
+type ManifestKey = keyof ApplicationSubmission | "fileName";
+
+/**
+ * Columns an importer may supply and may equally leave out. They are listed
+ * apart from ALL_KEYS on purpose: ALL_KEYS drives both the "missing columns"
+ * check and the per-row blank check, so adding an optional key to it would
+ * reject every domestic manifest ever exported — including samples/manifest.csv.
+ */
+const OPTIONAL_KEYS = ["bottlerAddress", "countryOfOrigin"] as const satisfies
+  readonly (keyof OptionalApplicationFields)[];
 
 /** Column headings we accept, normalized to lowercase alphanumerics. */
 const COLUMN_ALIASES: Record<string, ManifestKey> = {
@@ -76,6 +85,15 @@ const COLUMN_ALIASES: Record<string, ManifestKey> = {
   netcontents: "netContents",
   net: "netContents",
   volume: "netContents",
+  bottleraddress: "bottlerAddress",
+  bottler: "bottlerAddress",
+  bottlername: "bottlerAddress",
+  bottlernameandaddress: "bottlerAddress",
+  producer: "bottlerAddress",
+  nameandaddress: "bottlerAddress",
+  countryoforigin: "countryOfOrigin",
+  country: "countryOfOrigin",
+  origin: "countryOfOrigin",
 };
 
 const ALL_KEYS: ManifestKey[] = [
@@ -87,7 +105,7 @@ const ALL_KEYS: ManifestKey[] = [
 ];
 
 export interface ParsedManifest {
-  records: (ApplicationRecord & { fileName: string })[];
+  records: (ApplicationSubmission & { fileName: string })[];
   errors: string[];
 }
 
@@ -131,13 +149,23 @@ export function parseManifest(csvText: string): ParsedManifest {
       return;
     }
 
-    records.push({
+    const parsed: ApplicationSubmission & { fileName: string } = {
       fileName: record.fileName!,
       brandName: record.brandName!,
       classType: record.classType!,
       alcoholContent: record.alcoholContent!,
       netContents: record.netContents!,
-    });
+    };
+
+    // Left undefined when the column is absent or the cell is blank, so that
+    // "the importer said nothing" stays distinguishable from "the importer
+    // said empty". compare.ts asserts nothing about a field it never receives.
+    for (const key of OPTIONAL_KEYS) {
+      const value = record[key];
+      if (value) parsed[key] = value;
+    }
+
+    records.push(parsed);
   });
 
   return { records, errors };

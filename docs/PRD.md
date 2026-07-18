@@ -43,9 +43,9 @@ It does **not** approve or reject applications. It assists a review.
 | FR-5 | Verify Government Warning text exactly (27 CFR 16.21) | DONE | string equality, line breaks ignored |
 | FR-6 | Verify `GOVERNMENT WARNING:` heading is all caps | DONE | separate structured signal |
 | FR-7 | Verify the heading is **bold** | DONE | unit tests + `unbolded-warning` fixture returns FAIL naming bold |
-| FR-8 | Verify name/address of bottler or producer | OUT | built, then reverted — unreachable from UI/CSV (OD-1) |
-| FR-9 | Verify country of origin for imports | OUT | same (OD-1) |
-| FR-10 | Verify minimum type size of the warning | OUT | needs pixel measurement against known label dimensions |
+| FR-8 | Verify name/address of bottler or producer | DONE | optional form input + CSV column; `imported-scotch` fixture proves extraction |
+| FR-9 | Verify country of origin for imports | DONE | same; absent-from-label returns Check, never Problem |
+| FR-10 | Verify minimum type size of the warning | OUT | **measured and rejected** — see `TYPE-SIZE-FEASIBILITY.md`; ±30–40% error against a 20% band |
 
 FR-7 was the highest-severity item — a correctly capitalised heading in light
 type would have passed, a **false approval**. Closed and demonstrated on
@@ -84,13 +84,13 @@ artwork, not just unit-tested.
 
 | ID | Requirement | Target | Status | Measured |
 |---|---|---|---|---|
-| NFR-1 | Round-trip latency | < 5s, minimise | **NOT MET IN TAIL** | n=10: median 4.44s, p90 4.95s, max 6.29s |
+| NFR-1 | Round-trip latency | < 5s, minimise | **NOT MET IN TAIL** | n=10: median 4.47s, p90 5.02s, max 6.98s |
 | NFR-2 | Usable without training by low-tech-comfort staff | — | DONE | 18px base, 2 steps, plain-language verdicts |
 | NFR-3 | No persistence of images or application data | — | DONE | in-memory for one request |
 | NFR-4 | No raw provider errors surfaced to users | — | DONE | mapped in `route.ts` |
 | NFR-5 | Compliance logic auditable and reproducible | — | DONE | all decisions in `compare.ts` |
 | NFR-6 | Model access isolated for future substitution | — | DONE | `extract.ts` only |
-| NFR-7 | Runs behind a restrictive firewall | — | OUT | requires self-hosted or Azure-native model |
+| NFR-7 | Runs behind a restrictive firewall | — | PARTIAL | provider seam is real (`lib/providers/`); Azure adapter written but **never executed**, and it loses FR-7 bold detection |
 
 **NFR-5 is the load-bearing architectural invariant.** The model transcribes;
 TypeScript decides. Any change that moves a compliance judgement into the
@@ -134,8 +134,12 @@ The project is submittable when:
 
 | ID | Decision | Recommendation |
 |---|---|---|
-| OD-1 | Finish, revert, or document FR-8/FR-9 (optional fields) | **RESOLVED — reverted.** Documented as a known gap. The predicted ~0.3s saving did not materialise; the fields were ~7% of output, within measurement noise. |
+| OD-1 | Finish, revert, or document FR-8/FR-9 (optional fields) | **RESOLVED — finished.** Reverted first (unreachable), then wired end to end through the form and CSV importer with a fixture proving extraction. |
 
-No open product decisions remain. The outstanding risk is NFR-1: latency is met
-at the median and missed in the tail, which is stated in the README rather than
-averaged away.
+No open product decisions remain. Two outstanding risks, both documented rather
+than averaged away:
+
+- **NFR-1** — latency is met at the median and missed in the tail.
+- **NFR-7** — the provider seam exists, but the Azure adapter has never run, and
+  swapping to it would lose FR-7. Firewall operation is designed for, not
+  achieved.

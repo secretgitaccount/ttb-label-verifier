@@ -8,7 +8,7 @@
  */
 
 import type {
-  ApplicationRecord,
+  ApplicationSubmission,
   ExtractedLabel,
   FieldResult,
   VerificationResult,
@@ -105,6 +105,36 @@ function compareText(
   };
 }
 
+/**
+ * A field that is only checked when the application asserts a value for it.
+ *
+ * TTB does not require every element on every label — country of origin is an
+ * import-only statement, and a bottler address may sit on a back label that was
+ * never photographed. So an absent value on the application means we make no
+ * claim at all (the caller omits the field), and an absent value on the *label*
+ * for something the application does assert is a REVIEW, not a FAIL: we cannot
+ * tell "not on the product" from "not in this photograph", and an agent can.
+ * A value that is present but contradicts the application is a real mismatch
+ * and falls through to compareText, which can still FAIL it.
+ */
+function compareOptionalText(
+  field: FieldResult["field"],
+  title: string,
+  expected: string,
+  found: string | null,
+): FieldResult {
+  if (!found) {
+    return {
+      field,
+      title,
+      expected,
+      found,
+      verdict: "REVIEW",
+      reason: `The application states "${expected}" but no ${title.toLowerCase()} was read from this artwork. Confirm whether it appears elsewhere on the packaging.`,
+    };
+  }
+  return compareText(field, title, expected, found);
+}
 
 /** Pull the ABV percentage out of strings like "45% Alc./Vol. (90 Proof)". */
 export function parseAbv(text: string): number | null {
@@ -325,7 +355,7 @@ function rollUp(fields: FieldResult[]): Verdict {
 }
 
 export function verify(
-  application: ApplicationRecord,
+  application: ApplicationSubmission,
   label: ExtractedLabel,
   elapsedMs: number,
 ): VerificationResult {
@@ -339,6 +369,26 @@ export function verify(
 
   // Only checked when the application asserts them. Nothing is inferred from
   // their absence: a domestic label with no country of origin is not a defect.
+  if (application.bottlerAddress?.trim()) {
+    fields.push(
+      compareOptionalText(
+        "bottlerAddress",
+        "Bottler Name and Address",
+        application.bottlerAddress.trim(),
+        label.bottlerAddress,
+      ),
+    );
+  }
+  if (application.countryOfOrigin?.trim()) {
+    fields.push(
+      compareOptionalText(
+        "countryOfOrigin",
+        "Country of Origin",
+        application.countryOfOrigin.trim(),
+        label.countryOfOrigin,
+      ),
+    );
+  }
 
   let verdict = rollUp(fields);
 

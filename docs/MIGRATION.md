@@ -2,8 +2,22 @@
 
 **Status: unsolved.** This document does not describe work that has been done.
 It describes a known blocker, what the code already does to contain it, and
-what each way out would actually cost. Nothing here has been implemented or
-benchmarked.
+what each way out would actually cost.
+
+**One thing has since changed:** the swap seam is now real code rather than a
+description. `lib/extract.ts` selects a provider from `lib/providers/` by env
+var, and an Azure adapter exists at `lib/providers/azure.ts`. See §2.1.
+
+**That adapter has never run.** It is code-complete, type-checked, and
+unverified — there is no Azure account and no network access to one. It has
+never been executed against the service. Nothing below should be read as
+"Azure works now". It does not reduce the probability of the blocker in §1,
+and it is not benchmarked.
+
+> ### ⚠ The Azure path loses bold detection (FR-7). Read §2.2.
+> Every label checked through the Azure adapter returns `headingBold: null`
+> and therefore needs a human to check the heading weight. This is a genuine
+> capability loss, not a footnote.
 
 ---
 
@@ -76,6 +90,75 @@ itself, so a swap does touch it. It exercises `validateExtractedLabel`, which
 is backend-agnostic, so most of it should survive — but budget for revisiting
 it rather than assuming it is free.)
 
+## 2.1 The seam, as it now exists in code
+
+```
+lib/extract.ts              selects a provider; exports extractLabel
+lib/providers/contract.ts   LabelExtractor type + validateExtractedLabel (backend-agnostic)
+lib/providers/anthropic.ts  the working implementation, moved here unchanged
+lib/providers/azure.ts      UNVERIFIED adapter — never executed
+```
+
+Selection is by `EXTRACTION_PROVIDER`, defaulting to `anthropic`. An unknown
+value throws at call time listing the valid names, rather than silently falling
+back to the default — a typo that quietly kept calling `api.anthropic.com`
+would defeat the point of the exercise.
+
+The Azure adapter is written against the **documented REST surface using
+`fetch`**, not the `@azure-rest/ai-document-intelligence` SDK. That is
+deliberate: the SDK's exact method names are not known here with confidence,
+and guessing them while presenting them as fact would be worse than saying so.
+It also keeps the default path free of any new runtime dependency. The specific
+inferences — route shape, `api-version`, the `base64Source` body key, the
+202 + `Operation-Location` polling envelope, `Ocp-Apim-Subscription-Key` auth,
+and the `polygon` array shape — are enumerated in the adapter's header comment
+and must be checked against current Azure docs before use. Entra ID / managed
+identity auth, which TTB would most likely require, is **not** implemented.
+
+What is tested: the pure `mapReadResultToLabel` OCR-lines → `ExtractedLabel`
+mapping, in `test/providers.test.ts`, against synthetic OCR input. What is not
+tested: every line that touches HTTP.
+
+Field mapping is the largest work item and the weakest part. OCR returns an
+unordered bag of lines, so the adapter identifies fields by pattern (ABV, net
+contents, origin and bottler statements), picks the brand as the physically
+largest unclaimed line, and falls back to a keyword list for class/type that
+covers the distilled-spirits reference case and little else. The vision model
+does this from context for free. Per NFR-5 this mapping lives in the adapter,
+not in `compare.ts`: it decides which line a value was *read from*, never
+whether a value is correct.
+
+## 2.2 ⚠ REGRESSION: the Azure path cannot check bold (FR-7)
+
+**`lib/providers/azure.ts` returns `headingBold: null` unconditionally.**
+
+OCR reports text and geometry. It does not reliably report stroke weight
+relative to adjacent body text, so there is nothing honest to populate the
+field with.
+
+`null` is the *safe* answer — `compare.ts` routes it through the existing
+uncertainty path to REVIEW, never PASS, so a light-type heading is not silently
+approved. But the cost is real and it is not small:
+
+- **Every single label** checked through this provider comes back REVIEW on the
+  government warning, regardless of the label's actual quality.
+- FR-7 was the highest-severity requirement in the PRD precisely because a
+  correctly capitalised heading in light type is a **false approval**. Under
+  this provider that check is not performed — it is handed back to the agent.
+- The product's case is throughput. A provider that returns "a human must look
+  at this" for 100% of labels erodes a large part of that case. Anyone costing
+  this migration should count agent hours, not just engineer-days.
+
+Leads that were **not** implemented or validated: Azure's font/style add-on
+(`features=styleFont`) is documented to return `analyzeResult.styles[]` with
+`fontWeight: "normal" | "bold"` over character spans, which *might* populate
+this field — its availability for the chosen model/version/locale, its accuracy
+on label artwork, and its latency cost were all unverified here. Otherwise:
+rebuild bold detection from glyph geometry, or formally downgrade FR-7.
+
+A test in `test/providers.test.ts` asserts the `null`, so a future change
+claiming to fix this has to overturn it deliberately.
+
 ### Honest caveat: `extract.ts` is not quite the whole surface
 
 Two provider-specific details leak outside it, and a migration must handle
@@ -85,6 +168,15 @@ them:
   `Anthropic.APIError` in `describeFailure()`, and checks
   `process.env.ANTHROPIC_API_KEY` before accepting a request. Both need
   rewriting for a new backend — roughly 40 lines, mechanical, but real.
+  **Concretely: setting `EXTRACTION_PROVIDER=azure` today is not sufficient to
+  run without Anthropic.** The route still refuses every request with a
+  500 unless `ANTHROPIC_API_KEY` is set, even though the key would then go
+  unused, and Azure's HTTP failures would not map to the friendly messages in
+  `describeFailure()` (the adapter throws pre-worded Errors to compensate,
+  which the route's final `instanceof Error` branch passes through). That gate
+  was left in place rather than edited because `route.ts` is outside the scope
+  of this change; it is the first thing to fix if the Azure path is ever
+  pursued.
 - The call in `extract.ts` uses provider-specific request fields
   (`output_config.format.type: "json_schema"`, `effort`, `thinking`) and
   base64 image blocks. A replacement gets structured output some other way —
@@ -124,7 +216,9 @@ year.
   that the current vision model does for free — and that logic must live in a
   transcription-mapping layer, not in `compare.ts`, or the NFR-5 invariant
   breaks. That is the largest single work item in this option.
-- `headingBold` (FR-7) is the hard part. Layout OCR reports bounding boxes and
+- `headingBold` (FR-7) is the hard part, and §2.2 is what the adapter actually
+  does about it: nothing — it returns null, and every label needs a human.
+  Layout OCR reports bounding boxes and
   sometimes a coarse style flag; it does not reliably report stroke weight
   relative to adjacent body text. Bold detection may have to be rebuilt from
   glyph geometry, or FR-7 downgraded to "cannot determine" — which resolves to

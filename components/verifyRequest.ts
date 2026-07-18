@@ -1,4 +1,4 @@
-import type { ApplicationRecord, VerificationResult } from "@/lib/types";
+import type { ApplicationSubmission, VerificationResult } from "@/lib/types";
 
 /**
  * Longest edge we send to the server, in pixels.
@@ -51,7 +51,7 @@ async function downscale(image: File): Promise<Blob> {
 /** POSTs one label + application pair and returns the verdict. */
 export async function verifyLabel(
   image: File,
-  application: ApplicationRecord,
+  application: ApplicationSubmission,
 ): Promise<VerificationResult> {
   const prepared = await downscale(image);
   const form = new FormData();
@@ -64,6 +64,14 @@ export async function verifyLabel(
   form.append("classType", application.classType);
   form.append("alcoholContent", application.alcoholContent);
   form.append("netContents", application.netContents);
+  // Omitted entirely when the applicant did not state one — sending an empty
+  // field would be indistinguishable from claiming a blank value.
+  if (application.bottlerAddress?.trim()) {
+    form.append("bottlerAddress", application.bottlerAddress.trim());
+  }
+  if (application.countryOfOrigin?.trim()) {
+    form.append("countryOfOrigin", application.countryOfOrigin.trim());
+  }
 
   const response = await fetch("/api/verify", { method: "POST", body: form });
   const payload = await response.json();

@@ -1,15 +1,27 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import type { ApplicationRecord, VerificationResult } from "@/lib/types";
+import type {
+  ApplicationRecord,
+  OptionalApplicationFields,
+  VerificationResult,
+} from "@/lib/types";
 import { ResultPanel } from "./ResultPanel";
 import { verifyLabel } from "./verifyRequest";
 
-const EMPTY: ApplicationRecord = {
+/**
+ * Every box is a controlled input, so the optional ones are held as "" here
+ * rather than undefined. verifyLabel drops the blank ones before they are sent.
+ */
+type FormState = ApplicationRecord & Required<OptionalApplicationFields>;
+
+const EMPTY: FormState = {
   brandName: "",
   classType: "",
   alcoholContent: "",
   netContents: "",
+  bottlerAddress: "",
+  countryOfOrigin: "",
 };
 
 const FIELDS: {
@@ -31,8 +43,35 @@ const FIELDS: {
   { key: "netContents", label: "Net contents", placeholder: "750 mL" },
 ];
 
+/**
+ * TTB requires these only in some circumstances — a country of origin is an
+ * import-only statement, and many domestic applications state no bottler
+ * address here at all. They are kept out of FIELDS so they cannot reach the
+ * `ready` check below: a domestic spirits application must submit with both
+ * boxes empty.
+ */
+const OPTIONAL_FIELDS: {
+  key: keyof Required<OptionalApplicationFields>;
+  label: string;
+  placeholder: string;
+  hint: string;
+}[] = [
+  {
+    key: "bottlerAddress",
+    label: "Bottler name and address",
+    placeholder: "Bottled by Old Tom Distillery, Bardstown, KY",
+    hint: "Leave blank if the application does not state one.",
+  },
+  {
+    key: "countryOfOrigin",
+    label: "Country of origin",
+    placeholder: "Product of Scotland",
+    hint: "Imported products only. Leave blank for domestic products.",
+  },
+];
+
 export function SingleCheck() {
-  const [application, setApplication] = useState<ApplicationRecord>(EMPTY);
+  const [application, setApplication] = useState<FormState>(EMPTY);
   const [image, setImage] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [result, setResult] = useState<VerificationResult | null>(null);
@@ -101,6 +140,35 @@ export function SingleCheck() {
               </label>
             ))}
           </div>
+
+          <div className="mt-6 border-t border-slate-200 pt-5">
+            <p className="mb-4 font-medium text-slate-700">
+              Only if the application states them
+            </p>
+            <div className="grid gap-5 sm:grid-cols-2">
+              {OPTIONAL_FIELDS.map(({ key, label, placeholder, hint }) => (
+                <label key={key} className="block">
+                  <span className="mb-1.5 block font-medium">
+                    {label}{" "}
+                    <span className="font-normal text-slate-600">(optional)</span>
+                  </span>
+                  <input
+                    type="text"
+                    value={application[key]}
+                    placeholder={placeholder}
+                    onChange={(event) =>
+                      setApplication((current) => ({
+                        ...current,
+                        [key]: event.target.value,
+                      }))
+                    }
+                    className="w-full rounded border border-slate-400 px-3 py-2.5 focus:border-blue-700"
+                  />
+                  <span className="mt-1.5 block text-sm text-slate-600">{hint}</span>
+                </label>
+              ))}
+            </div>
+          </div>
         </fieldset>
 
         <fieldset className="rounded-lg border border-slate-300 bg-white p-6 shadow-sm">
@@ -146,7 +214,7 @@ export function SingleCheck() {
           )}
           {!ready && !checking && (
             <p className="text-slate-600">
-              Fill in all four boxes and choose an image.
+              Fill in the four required boxes and choose an image.
             </p>
           )}
         </div>

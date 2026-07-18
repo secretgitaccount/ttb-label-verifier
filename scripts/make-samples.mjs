@@ -26,7 +26,16 @@ const WARNING =
   "defects. (2) Consumption of alcoholic beverages impairs your ability to " +
   "drive a car or operate machinery, and may cause health problems.";
 
-function labelHtml({ brand, classType, abv, net, warning, tilt = 0 }) {
+function labelHtml({
+  brand,
+  classType,
+  abv,
+  net,
+  warning,
+  tilt = 0,
+  origin = "",
+  bottler = "",
+}) {
   return `<!doctype html>
 <meta charset="utf-8">
 <style>
@@ -42,6 +51,9 @@ function labelHtml({ brand, classType, abv, net, warning, tilt = 0 }) {
   .spacer { flex: 1; }
   .abv { font-size: 27px; letter-spacing: 1px; }
   .net { font-size: 23px; margin-top: 8px; }
+  .origin { font-size: 21px; letter-spacing: 1px; margin-top: 12px;
+    text-transform: uppercase; }
+  .bottler { font-size: 15px; line-height: 1.4; margin-top: 12px; }
   .warning { font-size: 11.5px; text-align: left; line-height: 1.45;
     margin-top: 26px; font-family: Helvetica, Arial, sans-serif; }
   .warning b { font-weight: 700; }
@@ -57,6 +69,8 @@ function labelHtml({ brand, classType, abv, net, warning, tilt = 0 }) {
   <div class="spacer"></div>
   <div class="abv">${abv}</div>
   <div class="net">${net}</div>
+  ${origin ? `<div class="origin">${origin}</div>` : ""}
+  ${bottler ? `<div class="bottler">${bottler}</div>` : ""}
   <div class="rule"></div>
   <div class="warning">${warning}</div>
 </div>`;
@@ -120,6 +134,20 @@ const SAMPLES = [
       net: "0.75 L",
       warning: WARNING.replace("GOVERNMENT WARNING:", "<b>GOVERNMENT WARNING:</b>"),
       tilt: -7,
+    }),
+  },
+  {
+    name: "imported-scotch",
+    note: "carries a country of origin AND a bottler address — exercises the optional fields",
+    html: labelHtml({
+      brand: "GLEN CAIRNGORM",
+      classType: "Single Malt Scotch Whisky",
+      abv: "43% Alc./Vol. (86 Proof)",
+      net: "750 mL",
+      origin: "Product of Scotland",
+      bottler:
+        "Imported and bottled by Cairngorm Imports Ltd., Portland, OR",
+      warning: WARNING.replace("GOVERNMENT WARNING:", "<b>GOVERNMENT WARNING:</b>"),
     }),
   },
 ];

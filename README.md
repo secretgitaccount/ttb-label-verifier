@@ -83,13 +83,14 @@ Full HTTP round trip, `old-tom`, n=10 consecutive runs against a local server:
 
 | min | median | p90 | max |
 |---|---|---|---|
-| 4.04s | 4.44s | 4.95s | 6.29s |
+| 3.81s | 4.47s | 5.02s | 6.98s |
 
-**The 5-second requirement is met at the median and missed in the tail.** One
-run in ten exceeded it, and the p90 sits within 50ms of the limit. An earlier
-sample of n=3 suggested a comfortable 4.1–4.2s; widening to n=10 showed that was
-optimistic, and the honest figure is a distribution with a long right tail, not
-a tight range.
+**The 5-second requirement is met at the median and missed in the tail.** The
+p90 is just over the limit and the worst run was 6.98s. An earlier sample of n=3
+suggested a comfortable 4.1–4.2s; widening to n=10 showed that was optimistic,
+and the honest figure is a distribution with a long right tail, not a tight
+range. Measuring the same build twice at n=10 moved the median by 0.03s and the
+max by 0.7s, so treat the tail figure as indicative rather than precise.
 
 The variance is in the model call and the network, not in this application —
 local compute is negligible (base64 encoding is sub-millisecond and `verify()`
