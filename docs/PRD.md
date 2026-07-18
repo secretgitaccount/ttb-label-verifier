@@ -84,7 +84,7 @@ artwork, not just unit-tested.
 
 | ID | Requirement | Target | Status | Measured |
 |---|---|---|---|---|
-| NFR-1 | Round-trip latency | < 5s, minimise | **NOT MET IN TAIL** | n=10: median 4.47s, p90 5.02s, max 6.98s |
+| NFR-1 | Round-trip latency | < 5s, minimise | **UNCERTAIN** | Latest n=10: 4.22s median / 4.67s p90 / 4.71s max, all under 5s. Two earlier n=10 samples on near-identical builds gave p90 4.95s and 5.02s with tails to 6.98s. Repeat variance exceeds the effect of any change made, so this is not certified. `MAX_EDGE` 1600→1200 cut real-upload input tokens 25%; the tail is connection behaviour, not pixels |
 | NFR-2 | Usable without training by low-tech-comfort staff | — | DONE | 18px base, 2 steps, plain-language verdicts |
 | NFR-3 | No persistence of images or application data | — | DONE | in-memory for one request |
 | NFR-4 | No raw provider errors surfaced to users | — | DONE | mapped in `route.ts` |

@@ -4,12 +4,37 @@ import type { ApplicationSubmission, VerificationResult } from "@/lib/types";
  * Longest edge we send to the server, in pixels.
  *
  * A modern phone photo is ~4000px, which costs upload time and image tokens
- * without helping legibility. Measured round trip drops by roughly a second at
- * this size. Deliberately conservative rather than smaller: the warning
- * statement is the smallest print on the label, and shrinking it until it
- * misreads would turn a rejection into a false approval.
+ * without helping legibility. Was 1600; lowered to 1200 on measured evidence.
+ *
+ * Sweep at 1600/1200/900/700px long edge, both `old-tom` and `unbolded-warning`
+ * rendered at 2400x3000 and downscaled with `sips -Z`, 3 direct API calls each
+ * (same model, params and prompt as lib/providers/anthropic.ts, no Next.js):
+ *
+ *   1600px  4570 input tok  median 4652ms
+ *   1200px  3407 input tok  median 4256ms
+ *    900px  2760 input tok  median 4186ms  (4 of 6 timings captured)
+ *    700px  2402 input tok  warm median 4130ms, 2 of 5 warm calls over 5000ms
+ *
+ * Every size transcribed the government warning byte-exact against
+ * GOVERNMENT_WARNING on 6/6 runs, and `headingBold` was correct on 6/6 at every
+ * size (true for old-tom, false for unbolded-warning, never null). Bold
+ * detection did not degrade anywhere in the sweep, so the binding constraint is
+ * margin for real photographs, not measured accuracy.
+ *
+ * 1200 rather than 900 or 700 deliberately. 900 was the smallest size with a
+ * clean sweep and only ~650 tokens cheaper than 1200; 700 showed a worse
+ * latency tail and was never run against samples/title-case-warning.png, the
+ * fixture that probes capitalization fidelity in the warning itself. The
+ * fixtures are clean synthetic renders — a phone photo of a curved bottle under
+ * shop lighting is strictly harder, and the warning statement is the smallest
+ * print on the label. Keeping 1.33x linear headroom over the smallest passing
+ * size buys that margin for ~25% of the input tokens 1600 was spending.
+ *
+ * This does not fix NFR-1: the 5s tail is dominated by cold connections and
+ * model queueing, not image size. It cuts cost on real uploads and shaves the
+ * median. See README "Measured latency".
  */
-const MAX_EDGE = 1600;
+const MAX_EDGE = 1200;
 
 /** Downscale oversized uploads in the browser. Small images pass through untouched. */
 async function downscale(image: File): Promise<Blob> {

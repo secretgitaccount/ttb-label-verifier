@@ -79,30 +79,108 @@ check.
 has been measured on TTB infrastructure, and these figures should not be quoted
 to agents until it has been.**
 
-Full HTTP round trip, `old-tom`, n=10 consecutive runs against a local server:
+Two different things are worth measuring, and conflating them has already
+produced wrong conclusions in this project once.
+
+**1. Round trip on the committed fixtures** — `old-tom`, n=10 against a local
+server:
 
 | min | median | p90 | max |
 |---|---|---|---|
-| 3.81s | 4.47s | 5.02s | 6.98s |
+| 4.01s | 4.22s | 4.67s | 4.71s |
 
-**The 5-second requirement is met at the median and missed in the tail.** The
-p90 is just over the limit and the worst run was 6.98s. An earlier sample of n=3
-suggested a comfortable 4.1–4.2s; widening to n=10 showed that was optimistic,
-and the honest figure is a distribution with a long right tail, not a tight
-range. Measuring the same build twice at n=10 moved the median by 0.03s and the
-max by 0.7s, so treat the tail figure as indicative rather than precise.
+All ten runs came in under 5s. **Do not read that as the requirement being
+settled.** An earlier n=10 on a near-identical build measured 4.47s / 5.02s /
+6.98s, and an n=3 before that suggested 4.1s. The spread between those samples
+is larger than any change we have made. The tail is dominated by connection
+setup and provider queueing, and it is not stable enough to certify from a
+laptop.
 
-The variance is in the model call and the network, not in this application —
-local compute is negligible (base64 encoding is sub-millisecond and `verify()`
-is pure synchronous TypeScript with no I/O). Nothing in the current design
-brings the tail under 5s without either a faster model or accepting a weaker
-transcription guarantee, and the latter is not a trade this tool should make:
-verbatim warning transcription is what makes the exact-match check auditable.
+**2. Cost and latency of a real upload.** The committed fixtures are 800×1000 —
+*below* `MAX_EDGE`, so they are never downscaled and do not exercise the path a
+phone photo takes. Measured directly against a 2400×3000 render, downscaled the
+way the browser would:
 
-Sarah's constraint was that agents abandon a tool that is slower than doing the
-work by eye. At ~4.4s typical this clears that bar; at 6.3s worst case it does
-not. That gap is real and is stated here rather than averaged away. See
+| Long edge | Input tokens | Median call |
+|---|---|---|
+| 1600px (previous) | 4,570 | 4.65s |
+| **1200px (current)** | **3,407** | **4.26s** |
+| 900px | 2,760 | 4.19s |
+| 700px | 2,402 | 4.13s (warm), 9.5s cold |
+
+Lowering `MAX_EDGE` from 1600 to 1200 cuts input tokens by 25% on a real upload.
+That is a genuine cost reduction and a modest median improvement. It does **not**
+fix the tail: 700px still produced runs over 5s, which is the evidence that the
+tail is connection behaviour rather than pixels.
+
+Correctness was the gate, not speed. At every size tested the warning
+transcribed byte-exact against the statute (6/6 runs) and bold detection was
+correct (`true` for `old-tom`, `false` for `unbolded-warning`, never `null`).
+1200px was chosen over the smaller sizes that also passed, because real
+photographs carry noise, compression, and perspective that clean synthetic
+renders do not, and this signal carries a compliance check. Capitalisation
+fidelity inside the warning was separately confirmed at 1200px — a title-case
+heading is still read as title case, so the highest-severity check is intact.
+
+Sarah's constraint was that agents abandon a tool slower than doing the work by
+eye. At ~4.2s typical this clears that bar. The honest position on the tail is
+that we have measured it three times and got three different answers, and it
+needs measuring on TTB's network before anyone quotes a number to agents. See
 [Limitations](#limitations-and-trade-offs).
+
+### Image size sweep — `MAX_EDGE` lowered from 1600 to 1200
+
+The browser downscales uploads before POSTing them
+(`components/verifyRequest.ts`). That cap was 1600px on the long edge, chosen by
+judgement rather than measurement. It has now been measured and lowered to
+1200px.
+
+Method: `old-tom` and `unbolded-warning` were rendered at 2400x3000 and
+downscaled with `sips -Z` to 1600 / 1200 / 900 / 700px. Each size got 3 direct
+Anthropic API calls per fixture — same model, same parameters, and the system
+prompt and output schema taken verbatim from `lib/providers/anthropic.ts`. No
+prompt was changed (PRD NFR-5). Transcribed warnings were compared
+programmatically against `GOVERNMENT_WARNING` in `lib/warning.ts`, not by eye.
+
+| long edge | input tokens | median call | warning byte-exact | `headingBold` correct |
+|---|---|---|---|---|
+| 1600 (was) | 4570 | 4.65s | 6/6 | 6/6 |
+| **1200 (now)** | **3407** | **4.26s** | **6/6** | **6/6** |
+| 900 | 2760 | 4.19s | 6/6 | 6/6 |
+| 700 | 2402 | 4.13s warm | 6/6 | 6/6 |
+
+Two things this shows. First, bold detection and verbatim warning transcription
+— the two signals the whole check rests on — did not degrade at any size tested,
+including 700px. The fine perceptual distinction has more headroom than
+expected. Second, image size is not the lever that fixes the tail: 1200px cuts
+input tokens by 25% and the median by roughly 400ms, but 700px still put 2 of 5
+warm calls over 5s. The tail is cold connections and model queueing, not pixels.
+
+1200 rather than 900 or 700 is a margin decision, and it is worth being blunt
+about why. **The sweep used clean synthetic renders, not photographs.** Every
+fixture in `samples/` is a headless-browser screenshot of an HTML label: flat
+lighting, no glare, no curvature, no motion blur, perfectly axis-aligned type.
+A phone photo of a real bottle is strictly harder, and the government warning is
+the smallest print on the label. 900px passed cleanly but is only ~650 tokens
+cheaper than 1200; 700px was never run against `samples/title-case-warning.png`,
+the fixture that probes capitalization fidelity inside the warning itself. Going
+lower would trade a compliance check for a fraction of a second.
+
+**The committed fixtures do not exercise this path.** All six samples are
+800x1000, so their long edge (1000px) is below `MAX_EDGE` and `downscale()`
+passes them through untouched — at 1600 and at 1200 alike. The ~2946-token
+figure quoted for the smoke tests is the cost of a 1000px image, not of a
+downscaled upload. Real uploads have always cost more than the fixtures suggest,
+which is why the 1600px row above is higher than the baseline rather than lower.
+Any future change to `MAX_EDGE` has to be validated against downscaled
+full-resolution renders, as this sweep was, or it validates nothing.
+
+One finding out of scope here: at every size, including 1600, the model returns
+`brandName` as "Old Tom Distillery" although the label prints "OLD TOM
+DISTILLERY" in full caps, contradicting the prompt's instruction not to fix
+capitalization. It is size-independent, so it is not a downscaling artifact, and
+it is verdict-inert today because `compareText` in `lib/compare.ts` normalizes
+case. It is a transcription-fidelity bug worth filing separately.
 
 ---
 
@@ -282,7 +360,7 @@ Honest mapping, including the gap.
 | Requirement | How it is handled | Where |
 |---|---|---|
 | Compare label artwork to application data | Vision transcription plus field-by-field comparison | `lib/extract.ts`, `lib/compare.ts` |
-| Results in about 5 seconds | One model call, thinking disabled, `effort: low`, browser-side downscaling. Round trip measured at median 4.44s / p90 4.95s / max 6.29s (n=10, local). **Met at the median, missed in the tail**; elapsed time shown on every result | `lib/extract.ts` |
+| Results in about 5 seconds | One model call, thinking disabled, `effort: low`, browser-side downscaling. Round trip measured at median 4.22s / p90 4.67s / max 4.71s (n=10, local), but repeat sampling has varied by more than a second in the tail. `MAX_EDGE` lowered to 1200 after a correctness-gated size sweep, cutting real-upload input tokens 25%; elapsed time shown on every result | `lib/extract.ts` |
 | Government warning must be exact | Character-level equality against 27 CFR 16.21, plus separate all-caps and bold heading checks; all defects found are reported together | `lib/warning.ts`, `lib/compare.ts` |
 | Capitalization shouldn't fail a label | Case and punctuation differences alone resolve to Match; near-misses become Check | `lib/compare.ts` |
 | Unit differences (`0.75 L` vs `750 mL`) | Net contents normalized to millilitres before comparison | `lib/compare.ts` |
@@ -378,7 +456,10 @@ estimates. They were not benchmarked and contain no verified pricing.
   generous, and it should be re-measured on TTB infrastructure before anyone
   promises the number to agents. The call itself is already close to its floor
   — cheapest capable model, thinking disabled, `effort: low` — so the remaining
-  savings are in the schema, not the configuration.
+  savings are in the schema, not the configuration. The image-size sweep above
+  closed the one lever that was still open: shrinking further does not bring the
+  tail under 5s, so the tail needs connection reuse or a faster model, not fewer
+  pixels.
 - **The bold check is proven, not stress-tested.** The heading-weight check
   fires correctly on real artwork, but the evidence is a handful of runs on
   synthetic 11.5px Helvetica where the weight difference is 400 vs 700 — a
