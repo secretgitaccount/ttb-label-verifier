@@ -8,7 +8,7 @@
  */
 
 import type {
-  ApplicationRecord,
+  ApplicationSubmission,
   ExtractedLabel,
   FieldResult,
   VerificationResult,
@@ -103,6 +103,37 @@ function compareText(
     verdict: "FAIL",
     reason: `Label says "${found}", application says "${expected}".`,
   };
+}
+
+/**
+ * A field that is only checked when the application asserts a value for it.
+ *
+ * TTB does not require every element on every label — country of origin is an
+ * import-only statement, and a bottler address may sit on a back label that was
+ * never photographed. So an absent value on the application means we make no
+ * claim at all (the caller omits the field), and an absent value on the *label*
+ * for something the application does assert is a REVIEW, not a FAIL: we cannot
+ * tell "not on the product" from "not in this photograph", and an agent can.
+ * A value that is present but contradicts the application is a real mismatch
+ * and falls through to compareText, which can still FAIL it.
+ */
+function compareOptionalText(
+  field: FieldResult["field"],
+  title: string,
+  expected: string,
+  found: string | null,
+): FieldResult {
+  if (!found) {
+    return {
+      field,
+      title,
+      expected,
+      found,
+      verdict: "REVIEW",
+      reason: `The application states "${expected}" but no ${title.toLowerCase()} was read from this artwork. Confirm whether it appears elsewhere on the packaging.`,
+    };
+  }
+  return compareText(field, title, expected, found);
 }
 
 /** Pull the ABV percentage out of strings like "45% Alc./Vol. (90 Proof)". */
@@ -264,11 +295,39 @@ function compareWarning(label: ExtractedLabel): FieldResult {
     };
   }
 
+  // 27 CFR 16.21 requires the heading to be bold as well as capitalised, and a
+  // correctly-capitalised heading in light type is exactly the false approval
+  // this check exists to prevent.
+  const headingBold = label.governmentWarning.headingBold;
+  if (headingBold === false) {
+    return {
+      ...base,
+      verdict: "FAIL",
+      reason: 'The "GOVERNMENT WARNING:" heading must be printed in bold type.',
+    };
+  }
+
   if (!check.textExact) {
     return {
       ...base,
       verdict: "FAIL",
       reason: check.discrepancy ?? "Warning text does not match the required statement.",
+    };
+  }
+
+  // Bold is a visual property read off artwork, not text we can re-derive from
+  // the transcription — so unlike the caps check there is no second source to
+  // fall back on. When the model reports null it is telling us it could not
+  // see the difference, and converting that into a FAIL would reject compliant
+  // labels for being photographed badly. REVIEW is the honest verdict for an
+  // uncertain signal: it never auto-approves, and it puts the one thing a
+  // human can settle in front of a human.
+  if (headingBold === null || headingBold === undefined) {
+    return {
+      ...base,
+      verdict: "REVIEW",
+      reason:
+        'Warning text matches, but whether the "GOVERNMENT WARNING:" heading is printed in bold could not be determined from this image. Check the heading weight.',
     };
   }
 
@@ -287,7 +346,7 @@ function rollUp(fields: FieldResult[]): Verdict {
 }
 
 export function verify(
-  application: ApplicationRecord,
+  application: ApplicationSubmission,
   label: ExtractedLabel,
   elapsedMs: number,
 ): VerificationResult {
@@ -298,6 +357,29 @@ export function verify(
     compareNetContents(application.netContents, label.netContents),
     compareWarning(label),
   ];
+
+  // Only checked when the application asserts them. Nothing is inferred from
+  // their absence: a domestic label with no country of origin is not a defect.
+  if (application.bottlerAddress?.trim()) {
+    fields.push(
+      compareOptionalText(
+        "bottlerAddress",
+        "Bottler Name and Address",
+        application.bottlerAddress.trim(),
+        label.bottlerAddress,
+      ),
+    );
+  }
+  if (application.countryOfOrigin?.trim()) {
+    fields.push(
+      compareOptionalText(
+        "countryOfOrigin",
+        "Country of Origin",
+        application.countryOfOrigin.trim(),
+        label.countryOfOrigin,
+      ),
+    );
+  }
 
   let verdict = rollUp(fields);
 

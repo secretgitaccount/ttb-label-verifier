@@ -48,6 +48,18 @@ part of the text: do not drop it, and do not begin the transcription at "(1)".
 Set governmentWarning.headingAllCaps by looking at how the heading is actually
 printed: true only if "GOVERNMENT WARNING:" appears in full capital letters.
 
+Set governmentWarning.headingBold by looking at the weight of the type: true if
+the heading is printed in noticeably heavier strokes than the sentences that
+follow it, false if it is the same weight as that body text. If the artwork is
+too small, too blurry, or too stylised for you to tell the two apart, return
+null. Do not guess — null is the correct answer when you cannot see the
+difference.
+
+bottlerAddress is the bottler's or producer's name and address as printed
+(e.g. "Bottled by Old Tom Distillery, Bardstown, KY"). countryOfOrigin is a
+statement such as "Product of Scotland". Return null for either one if it does
+not appear on the label; most domestic labels do not carry a country of origin.
+
 Set imageQuality.readable to false only when glare, blur, angle, or resolution
 genuinely prevent you from reading part of the label. A photograph taken at an
 angle or in poor light is still readable if you can make out the text.`;
@@ -73,6 +85,18 @@ const OUTPUT_SCHEMA = {
       type: ["string", "null"],
       description: 'The net contents statement as printed, e.g. "750 mL".',
     },
+    bottlerAddress: {
+      type: ["string", "null"],
+      description:
+        "The bottler's or producer's name and address as printed, e.g. " +
+        '"Bottled by Old Tom Distillery, Bardstown, KY", or null if absent.',
+    },
+    countryOfOrigin: {
+      type: ["string", "null"],
+      description:
+        'The country of origin statement as printed, e.g. "Product of Scotland". ' +
+        "Null if the label does not carry one, which is usual for domestic products.",
+    },
     governmentWarning: {
       type: "object",
       properties: {
@@ -88,8 +112,15 @@ const OUTPUT_SCHEMA = {
           type: ["boolean", "null"],
           description: 'True only if "GOVERNMENT WARNING:" is printed in all capitals.',
         },
+        headingBold: {
+          type: ["boolean", "null"],
+          description:
+            'True if the "GOVERNMENT WARNING:" heading is printed in noticeably ' +
+            "heavier type than the sentences that follow it, false if it is the " +
+            "same weight, null if the artwork is too small or unclear to tell.",
+        },
       },
-      required: ["present", "text", "headingAllCaps"],
+      required: ["present", "text", "headingAllCaps", "headingBold"],
       additionalProperties: false,
     },
     imageQuality: {
@@ -111,6 +142,8 @@ const OUTPUT_SCHEMA = {
     "classType",
     "alcoholContent",
     "netContents",
+    "bottlerAddress",
+    "countryOfOrigin",
     "governmentWarning",
     "imageQuality",
   ],
