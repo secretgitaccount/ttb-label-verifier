@@ -39,6 +39,12 @@ The government warning must be transcribed character-for-character, including
 any misspellings, omissions, or altered wording. Reproducing it from memory
 instead of reading it defeats the purpose of the check.
 
+governmentWarning.text must start with the heading and run to the end of the
+statement, as one continuous string — begin it with "GOVERNMENT WARNING:" (or
+whatever capitalization is actually printed) and continue through "...may cause
+health problems." Labels usually set the heading in bold, but bold is still
+part of the text: do not drop it, and do not begin the transcription at "(1)".
+
 Set governmentWarning.headingAllCaps by looking at how the heading is actually
 printed: true only if "GOVERNMENT WARNING:" appears in full capital letters.
 
@@ -73,7 +79,10 @@ const OUTPUT_SCHEMA = {
         present: { type: "boolean" },
         text: {
           type: ["string", "null"],
-          description: "Verbatim transcription of the warning, exactly as printed.",
+          description:
+            "Verbatim transcription of the entire warning, exactly as printed, " +
+            'starting with the "GOVERNMENT WARNING:" heading (bold counts) and ' +
+            'ending with "may cause health problems." Never start at "(1)".',
         },
         headingAllCaps: {
           type: ["boolean", "null"],
