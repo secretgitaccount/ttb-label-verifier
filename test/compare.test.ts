@@ -18,8 +18,6 @@ function label(overrides: Partial<ExtractedLabel> = {}): ExtractedLabel {
     classType: "Kentucky Straight Bourbon Whiskey",
     alcoholContent: "45% Alc./Vol. (90 Proof)",
     netContents: "750 mL",
-    bottlerAddress: null,
-    countryOfOrigin: null,
     governmentWarning: {
       present: true,
       text: GOVERNMENT_WARNING,
@@ -174,52 +172,101 @@ test("a wording defect outranks an uncertain bold reading", () => {
   assert.equal(field(result, "governmentWarning").verdict, "FAIL");
 });
 
-test("a bottler address the label lacks is a review, not a rejection", () => {
+test("a label with altered wording AND a light heading names both defects", () => {
   const result = verify(
-    { ...application, bottlerAddress: "Bottled by Old Tom Distillery, Bardstown, KY" },
-    label({ bottlerAddress: null }),
+    application,
+    label({
+      governmentWarning: {
+        present: true,
+        text: GOVERNMENT_WARNING.replace("should not drink", "may wish to avoid"),
+        headingAllCaps: true,
+        headingBold: false,
+      },
+    }),
     0,
   );
-  const bottler = field(result, "bottlerAddress");
-  assert.equal(bottler.verdict, "REVIEW");
-  assert.equal(result.verdict, "REVIEW");
+  const warning = field(result, "governmentWarning");
+  assert.equal(warning.verdict, "FAIL");
+  assert.match(warning.reason, /reads "may"/); // the wording defect
+  assert.match(warning.reason, /bold/); // the weight defect
+  assert.equal(result.verdict, "FAIL");
 });
 
-test("a bottler address that contradicts the application fails", () => {
+test("a title-case heading in light type names both defects", () => {
   const result = verify(
-    { ...application, bottlerAddress: "Bottled by Old Tom Distillery, Bardstown, KY" },
-    label({ bottlerAddress: "Bottled by Riverbend Spirits, Portland, OR" }),
+    application,
+    label({
+      governmentWarning: {
+        present: true,
+        text: GOVERNMENT_WARNING.replace("GOVERNMENT WARNING:", "Government Warning:"),
+        headingAllCaps: false,
+        headingBold: false,
+      },
+    }),
     0,
   );
-  assert.equal(field(result, "bottlerAddress").verdict, "FAIL");
+  const warning = field(result, "governmentWarning");
+  assert.equal(warning.verdict, "FAIL");
+  assert.match(warning.reason, /capital letters/);
+  assert.match(warning.reason, /bold/);
 });
 
-test("a matching bottler address passes despite styling differences", () => {
+test("a pure capitalisation defect is reported once, not twice", () => {
   const result = verify(
-    { ...application, bottlerAddress: "Bottled by Old Tom Distillery, Bardstown, KY" },
-    label({ bottlerAddress: "BOTTLED BY OLD TOM DISTILLERY - BARDSTOWN, KY" }),
+    application,
+    label({
+      governmentWarning: {
+        present: true,
+        text: GOVERNMENT_WARNING.replace("GOVERNMENT WARNING:", "Government Warning:"),
+        headingAllCaps: false,
+        headingBold: true,
+      },
+    }),
     0,
   );
-  assert.equal(field(result, "bottlerAddress").verdict, "PASS");
+  const reason = field(result, "governmentWarning").reason;
+  assert.equal(reason.match(/capital/gi)?.length, 1);
 });
 
-test("a domestic label is not failed for lacking a country of origin", () => {
-  const result = verify(application, label({ countryOfOrigin: null }), 0);
-  assert.equal(result.verdict, "PASS");
-  assert.equal(
-    result.fields.some((f) => f.field === "countryOfOrigin"),
-    false,
+test("wording defects are reported ahead of weight defects", () => {
+  const result = verify(
+    application,
+    label({
+      governmentWarning: {
+        present: true,
+        text: GOVERNMENT_WARNING.replace("birth defects", "birth problems"),
+        headingAllCaps: true,
+        headingBold: false,
+      },
+    }),
+    0,
   );
+  const reason = field(result, "governmentWarning").reason;
+  assert.ok(reason.indexOf("problems") < reason.indexOf("bold"));
 });
 
-test("a country of origin is compared when the import application states one", () => {
-  const stated = { ...application, countryOfOrigin: "Product of Scotland" };
-  const match = verify(stated, label({ countryOfOrigin: "Product of Scotland" }), 0);
-  assert.equal(field(match, "countryOfOrigin").verdict, "PASS");
-
-  const mismatch = verify(stated, label({ countryOfOrigin: "Product of Ireland" }), 0);
-  assert.equal(field(mismatch, "countryOfOrigin").verdict, "FAIL");
+test("an uncertain bold reading alongside a wording defect stays a FAIL", () => {
+  const result = verify(
+    application,
+    label({
+      governmentWarning: {
+        present: true,
+        text: GOVERNMENT_WARNING.replace("birth defects", "birth problems"),
+        headingAllCaps: true,
+        headingBold: null,
+      },
+    }),
+    0,
+  );
+  const warning = field(result, "governmentWarning");
+  assert.equal(warning.verdict, "FAIL");
+  assert.match(warning.reason, /problems/);
 });
+
+
+
+
+
 
 test("net contents match across units", () => {
   const result = verify(

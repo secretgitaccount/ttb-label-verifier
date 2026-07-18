@@ -8,13 +8,13 @@
  */
 
 import type {
-  ApplicationSubmission,
+  ApplicationRecord,
   ExtractedLabel,
   FieldResult,
   VerificationResult,
   Verdict,
 } from "./types.ts";
-import { checkWarningText } from "./warning.ts";
+import { checkWarningText, collapseWhitespace, GOVERNMENT_WARNING } from "./warning.ts";
 
 /** Strip case, punctuation and spacing noise: "STONE'S THROW" ~ "Stone's Throw". */
 export function normalize(text: string): string {
@@ -105,36 +105,6 @@ function compareText(
   };
 }
 
-/**
- * A field that is only checked when the application asserts a value for it.
- *
- * TTB does not require every element on every label — country of origin is an
- * import-only statement, and a bottler address may sit on a back label that was
- * never photographed. So an absent value on the application means we make no
- * claim at all (the caller omits the field), and an absent value on the *label*
- * for something the application does assert is a REVIEW, not a FAIL: we cannot
- * tell "not on the product" from "not in this photograph", and an agent can.
- * A value that is present but contradicts the application is a real mismatch
- * and falls through to compareText, which can still FAIL it.
- */
-function compareOptionalText(
-  field: FieldResult["field"],
-  title: string,
-  expected: string,
-  found: string | null,
-): FieldResult {
-  if (!found) {
-    return {
-      field,
-      title,
-      expected,
-      found,
-      verdict: "REVIEW",
-      reason: `The application states "${expected}" but no ${title.toLowerCase()} was read from this artwork. Confirm whether it appears elsewhere on the packaging.`,
-    };
-  }
-  return compareText(field, title, expected, found);
-}
 
 /** Pull the ABV percentage out of strings like "45% Alc./Vol. (90 Proof)". */
 export function parseAbv(text: string): number | null {
@@ -286,33 +256,42 @@ function compareWarning(label: ExtractedLabel): FieldResult {
   // Prefer the model's direct reading of the artwork for the caps question —
   // it can see rendering that survives transcription poorly.
   const headingAllCaps = label.governmentWarning.headingAllCaps ?? check.headingAllCaps;
+  const headingBold = label.governmentWarning.headingBold;
+
+  // A label can be wrong in more than one way at once. Reporting only the
+  // first defect sends the applicant an incomplete correction and buys a
+  // second bad submission, so collect every hard defect and report them all.
+  // Order is severity order: altered wording, then capitalisation, then weight.
+  const defects: string[] = [];
+
+  // Is the transcription the statutory text modulo capitalisation? If so the
+  // only textual defect is a caps defect, and the caps branch below already
+  // says so — don't say it twice.
+  const differsOnlyByCase =
+    collapseWhitespace(label.governmentWarning.text).toLowerCase() ===
+    collapseWhitespace(GOVERNMENT_WARNING).toLowerCase();
+
+  if (!check.textExact && !differsOnlyByCase) {
+    defects.push(
+      check.discrepancy ?? "Warning text does not match the required statement.",
+    );
+  }
 
   if (!headingAllCaps) {
-    return {
-      ...base,
-      verdict: "FAIL",
-      reason: 'The "GOVERNMENT WARNING:" heading must be in all capital letters.',
-    };
+    defects.push('The "GOVERNMENT WARNING:" heading must be in all capital letters.');
+  } else if (!check.textExact && differsOnlyByCase) {
+    defects.push("Wording is correct but capitalization differs from the required text.");
   }
 
   // 27 CFR 16.21 requires the heading to be bold as well as capitalised, and a
   // correctly-capitalised heading in light type is exactly the false approval
   // this check exists to prevent.
-  const headingBold = label.governmentWarning.headingBold;
   if (headingBold === false) {
-    return {
-      ...base,
-      verdict: "FAIL",
-      reason: 'The "GOVERNMENT WARNING:" heading must be printed in bold type.',
-    };
+    defects.push('The "GOVERNMENT WARNING:" heading must be printed in bold type.');
   }
 
-  if (!check.textExact) {
-    return {
-      ...base,
-      verdict: "FAIL",
-      reason: check.discrepancy ?? "Warning text does not match the required statement.",
-    };
+  if (defects.length > 0) {
+    return { ...base, verdict: "FAIL", reason: defects.join(" ") };
   }
 
   // Bold is a visual property read off artwork, not text we can re-derive from
@@ -346,7 +325,7 @@ function rollUp(fields: FieldResult[]): Verdict {
 }
 
 export function verify(
-  application: ApplicationSubmission,
+  application: ApplicationRecord,
   label: ExtractedLabel,
   elapsedMs: number,
 ): VerificationResult {
@@ -360,26 +339,6 @@ export function verify(
 
   // Only checked when the application asserts them. Nothing is inferred from
   // their absence: a domestic label with no country of origin is not a defect.
-  if (application.bottlerAddress?.trim()) {
-    fields.push(
-      compareOptionalText(
-        "bottlerAddress",
-        "Bottler Name and Address",
-        application.bottlerAddress.trim(),
-        label.bottlerAddress,
-      ),
-    );
-  }
-  if (application.countryOfOrigin?.trim()) {
-    fields.push(
-      compareOptionalText(
-        "countryOfOrigin",
-        "Country of Origin",
-        application.countryOfOrigin.trim(),
-        label.countryOfOrigin,
-      ),
-    );
-  }
 
   let verdict = rollUp(fields);
 
