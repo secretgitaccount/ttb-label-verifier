@@ -342,27 +342,38 @@ can settle in front of a human. The practical consequence for an agent: **on
 real-world photographs, expect more Checks on the warning field than the
 synthetic fixtures suggest.**
 
-#### Bottler address and country of origin: not implemented
+#### Bottler address and country of origin
 
 The brief lists "Name and address of bottler/producer" and "Country of origin
-for imports" among the common required elements. **Neither is verified.**
+for imports" among the common required elements. Both are verified.
 
-Both were built during development and then deliberately removed. The
-implementation was complete in the library — types, extraction schema, and a
-comparison path — but nothing in the running app could reach it: no form field
-collected the values and no CSV column carried them, so the comparison branches
-never executed. Half-wired code that costs latency on every request and delivers
-nothing to an agent is worse than an honest gap, so it was reverted rather than
-left in to look more complete than it was.
+They are **optional** inputs, because TTB requires them only in some
+circumstances — a country of origin is an import-only statement, and many
+domestic applications state no bottler address. They appear as clearly-labelled
+optional boxes on the form and as optional `bottler_address` /
+`country_of_origin` CSV columns. A domestic application submits cleanly with
+both blank, and a manifest that predates the columns still parses unchanged.
 
-Removing them returned ~7% of the output tokens. That turned out to be within
-measurement noise rather than the ~0.3s it was estimated to be worth, which is
-itself worth recording: the estimate was wrong, and the latency ceiling is the
-warning transcription, not field count.
+The interesting case is a value the application asserts but the label does not
+show. That returns **Check**, not Problem: "absent from the product" and "not
+visible in this photograph" are not distinguishable from a single image, and
+failing an application on that distinction would be wrong. A value that is
+present and *contradicts* the application is a Problem.
 
-Finishing them properly means a form field, a CSV column, a fixture that renders
-an address, and end-to-end proof that the model reads it — not just restoring
-the deleted code. That is scoped work, not a leftover.
+`samples/imported-scotch.png` carries both, so extraction is proven on artwork
+rather than assumed from a schema.
+
+*Development note, kept because it is the more useful half of the story:* these
+were built, then deliberately reverted, then rebuilt. The first implementation
+was complete in the library but unreachable — no form field or CSV column fed
+it — so it cost output tokens on every request and compared nothing. Half-wired
+code that looks more complete than it is was judged worse than an honest gap.
+The rebuild is what made them real.
+
+Removing them the first time returned ~7% of output tokens, which turned out to
+be within measurement noise rather than the ~0.3s it was estimated to be worth.
+That estimate was wrong, and the correction matters: the latency ceiling is the
+warning transcription, not the field count.
 
 ---
 
@@ -410,8 +421,8 @@ Honest mapping, including the gap.
 | Something a non-technical user can operate | Two numbered steps, one button, plain-language verdicts, 18px base font, every result states its reason in a sentence | `components/` |
 | Batch uploads | CSV manifest plus multi-select image picker matched on filename; six concurrent requests, live progress, downloadable results CSV | `components/BatchCheck.tsx`, `lib/csv.ts` |
 | "You need judgment" — don't auto-approve | The Check verdict exists, an unreadable heading weight routes to Check rather than either extreme, and the footer states results assist review rather than replace it | `components/Verdict.tsx`, `app/layout.tsx` |
-| **Font size / type-size requirements** | **Partly implemented.** Heading *weight* is checked — a warning heading set in light type fails. Heading and body *size* are not: warning text that is correct, capitalised, bold, and simply too small still passes. Size needs pixel measurement against known label dimensions, not transcription. | `lib/compare.ts` (weight only) |
-| **Bottler address / country of origin** | **Not implemented.** Built during development, then reverted — the library code was unreachable from the UI and CSV importer. See above. | — |
+| **Font size / type-size requirements** | Heading *weight* is checked, and *size* is measured against the 27 CFR 16.22 minimum by classical computer vision when a label width is supplied. Rotated, curved or stretched images are refused rather than measured, and a missing width reports "not assessed" — neither guesses. Placement is still not checked. | `lib/typesize.ts`, `lib/compare.ts` |
+| **Bottler address / country of origin** | Verified as optional elements. Absent-from-label returns Check rather than Problem, since one image cannot distinguish "not on the product" from "not in this photograph". | `lib/compare.ts`, `components/SingleCheck.tsx`, `lib/csv.ts` |
 | **Audit trail of who checked what** | **Not implemented.** Nothing is persisted, by design for a prototype; a production tool would need this. | — |
 
 ---
