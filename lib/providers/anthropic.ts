@@ -9,6 +9,7 @@
 
 import Anthropic from "@anthropic-ai/sdk";
 import type { ExtractedLabel } from "../types.ts";
+import { recordExtraction } from "../observability.ts";
 import { validateExtractedLabel, type SupportedMediaType } from "./contract.ts";
 
 /**
@@ -154,6 +155,7 @@ export async function extractLabel(
   imageBase64: string,
   mediaType: SupportedMediaType,
 ): Promise<ExtractedLabel> {
+  const startedAt = Date.now();
   const response = await getClient().messages.create({
     model: MODEL,
     max_tokens: 2048,
@@ -175,6 +177,16 @@ export async function extractLabel(
         ],
       },
     ],
+  });
+
+  // Record cost and latency for every completed model call, before any parsing
+  // that might throw. This is the only place the app spends money, so it is the
+  // only place worth observing. See lib/observability.ts.
+  recordExtraction({
+    model: MODEL,
+    inputTokens: response.usage?.input_tokens ?? 0,
+    outputTokens: response.usage?.output_tokens ?? 0,
+    latencyMs: Date.now() - startedAt,
   });
 
   if (response.stop_reason === "max_tokens") {
