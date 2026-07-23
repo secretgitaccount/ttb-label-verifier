@@ -5,6 +5,16 @@ and tells an agent, in one glance, whether they match.
 
 Built for the take-home brief in `../instructions/README.md`.
 
+## Video Explainer
+
+[![Watch the walkthrough](https://img.youtube.com/vi/7NJ3vcZhwYo/maxresdefault.jpg)](https://www.youtube.com/watch?v=7NJ3vcZhwYo)
+
+A short walkthrough of what the tool does, why it's a prototype, and the local
+evaluation and observability setup. *(Click to watch on YouTube — GitHub does
+not play embedded video inline.)*
+
+---
+
 Reviewer shortcuts: [Requirements coverage](#requirements-coverage) ·
 [Approach](#approach) · [Tools used](#tools-used) ·
 [Assumptions](#assumptions) · [What the interviews asked for](#what-the-interviews-asked-for) ·
