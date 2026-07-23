@@ -272,8 +272,10 @@ the central design decision here, and the reason for it is auditability:
 The model is asked for one thing it is genuinely better at than code — reading
 text off a photograph that may be angled, glared, or badly lit — and is given a
 strict JSON schema (`output_config.format`) so the response shape is guaranteed.
-`lib/extract.ts` is the only file in the project that talks to a model, and it
-contains no compliance logic at all.
+Model access is isolated to a single provider (`lib/providers/anthropic.ts`,
+selected through the `lib/extract.ts` facade), and that provider contains no
+compliance logic at all — which is what lets it be swapped without touching a
+verdict.
 
 The schema makes a malformed response unlikely, not impossible, so
 `validateExtractedLabel` re-checks every field's shape and type before the JSON
@@ -650,37 +652,57 @@ stateless and stores nothing.
 
 ```
 app/
-  layout.tsx            shell; the "results assist review" footer lives here
-  page.tsx              mode switch
-  api/verify/route.ts   upload validation, orchestration, error mapping
+  layout.tsx              shell; the "results assist review" footer lives here
+  page.tsx                mode switch (one label / many labels)
+  api/verify/route.ts     upload validation, orchestration, error mapping
+  api/observability/route.ts   running cost/latency aggregate (GET)
 lib/
-  extract.ts            the only file that talks to the model; also validates its JSON
-  compare.ts            all compliance decisions
-  warning.ts            statutory warning text and exact-match checking
-  csv.ts                RFC 4180 manifest parsing
-  types.ts              shared shapes, including ExtractedLabel
-components/             UI
-test/compare.test.ts    26 tests over the decision logic
-test/extract.test.ts    11 tests over the model-response validator
-docs/MIGRATION.md       running without api.anthropic.com
-scripts/smoke-test.mjs  end-to-end check with timing
+  compare.ts              all compliance decisions — the deterministic core
+  typesize.ts             classical-CV type-size measurement (no model)
+  warning.ts              statutory warning text and exact-match checking
+  csv.ts                  RFC 4180 manifest parsing
+  observability.ts        per-call cost/latency accounting
+  types.ts                shared shapes, including ExtractedLabel
+  extract.ts              provider selector (facade over lib/providers)
+  providers/
+    contract.ts           the LabelExtractor interface + JSON validator
+    anthropic.ts          the live provider — the only file that calls a model
+    azure.ts              unverified OCR adapter (never executed; see MIGRATION)
+components/               UI
+eval/
+  run.ts                  npm run eval — scores transcription vs ground truth
+  ground-truth.ts         the oracle, derived from the fixtures
+test/                     94 tests: compare (39), typesize (23), extract (14),
+                          providers (14), observability (4). No network.
+docs/PRD.md               requirements, traced to the brief
+docs/PRPs/                the work backlog (how it was scoped and tracked)
+docs/TYPE-SIZE-FEASIBILITY.md   two rejected approaches + the CV one that worked
+docs/MIGRATION.md         running without api.anthropic.com
 scripts/make-samples.mjs  renders test label artwork via headless Chrome
-samples/                five fixtures: one clean, four with known defects
+scripts/smoke-test.mjs    single end-to-end check with timing
+samples/                  eight fixtures (two compliant, six single-defect) + manifest.csv
 ```
+
+Two boundaries carry the design. **`lib/compare.ts` makes every compliance
+decision** and no model touches it. **`lib/providers/anthropic.ts` is the only
+file that calls a model**, and it holds no compliance logic — which is what lets
+the provider be swapped (`providers/azure.ts`) without disturbing a single
+verdict.
 
 ## Cost
 
-One model call per label. Measured token usage on the fixtures is **~2,950
-input tokens and ~250 output tokens**, which is the number to multiply by
-current pricing — the per-label dollar figure previously quoted here is removed
-because it was not re-verified against current rates.
+One model call per label. Measured token usage is **~2,950 input and ~250
+output tokens**, which at Sonnet 5's standard rate is **~$0.013 per label** —
+not an estimate: it comes from the same per-call accounting the app records at
+runtime, and `npm run eval` prints it at the end of a run. (Standard $3/$15
+rates are used; the introductory discount makes the live figure slightly lower.)
 
 The output is dominated by the government warning: of ~610 characters of JSON,
 the warning object is ~350 and its `text` field alone ~283. That is the floor,
-not a target — the exact-match check is the point of the tool. The ~45
-characters spent on `bottlerAddress` and `countryOfOrigin` are the part that
-currently buys nothing (see above).
+not a target — the exact-match transcription is what makes the compliance check
+auditable, so it is not something to compress away.
 
 `ANTHROPIC_MODEL` overrides the model if you want to re-benchmark. Opus 4.8 was
 measured slower against the 5-second requirement, which is why Sonnet 5 is the
-default.
+default. See [Evaluation and observability](#evaluation-and-observability) for
+how cost is tracked at `/api/observability`.
